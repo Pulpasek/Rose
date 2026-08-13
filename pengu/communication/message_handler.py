@@ -230,6 +230,10 @@ class MessageHandler:
             self._handle_find_match_hover(payload)
         elif payload_type == "dismiss-custom-mod":
             self._handle_dismiss_custom_mod(payload)
+        elif payload_type == "delete-champion-mod":
+            self._handle_delete_champion_mod(payload)
+        elif payload_type == "delete-category-mod":
+            self._handle_delete_category_mod(payload)
         elif payload_type == "dismiss-historic":
             self._handle_dismiss_historic(payload)
         # Party mode messages
@@ -1526,6 +1530,126 @@ class MessageHandler:
         except Exception as exc:
             log.debug("[Dismiss] Failed to broadcast custom mod state: %s", exc)
 
+    def _clear_active_selection_if_matches(self, champion_id: object, relative_path: object) -> None:
+        """Clear the active/historic custom mod selection if it points at the deleted mod."""
+        if not relative_path:
+            return
+        normalized_target = str(relative_path).replace("\\", "/")
+
+        selected = getattr(self.shared_state, "selected_custom_mod", None)
+        if selected:
+            selected_rel = selected.get("relative_path")
+            if selected_rel and str(selected_rel).replace("\\", "/") == normalized_target:
+                self.shared_state.selected_custom_mod = None
+                try:
+                    if hasattr(self.shared_state, "ui_skin_thread") and self.shared_state.ui_skin_thread:
+                        self.shared_state.ui_skin_thread._broadcast_custom_mod_state()
+                except Exception as exc:
+                    log.debug("[DeleteMod] Failed to broadcast custom mod state: %s", exc)
+
+        try:
+            from utils.core.historic import (
+                clear_historic_entry,
+                get_historic_skin_for_champion,
+                is_custom_mod_path,
+                get_custom_mod_path,
+            )
+            if champion_id:
+                historic_value = get_historic_skin_for_champion(int(champion_id))
+                if historic_value is not None and is_custom_mod_path(historic_value):
+                    historic_path = get_custom_mod_path(historic_value)
+                    if historic_path and historic_path.replace("\\", "/") == normalized_target:
+                        clear_historic_entry(int(champion_id))
+                        log.info("[DeleteMod] Cleared historic entry for champion %s", champion_id)
+        except Exception as exc:
+            log.debug("[DeleteMod] Failed to clear historic entry: %s", exc)
+
+    def _handle_delete_champion_mod(self, payload: dict) -> None:
+        """Permanently delete an imported skin mod from a champion's mod folder."""
+        champion_id = payload.get("championId")
+        mod_name = payload.get("modName")
+        relative_path = payload.get("relativePath")
+        if not self.mod_storage:
+            self._send_response(json.dumps({
+                "type": "champion-mod-deleted",
+                "success": False,
+                "championId": champion_id,
+                "modName": mod_name,
+                "error": "Mod storage is not available",
+            }))
+            return
+        try:
+            deleted = self.mod_storage.delete_champion_mod(
+                champion_id,
+                mod_name=mod_name,
+                relative_path=relative_path,
+            )
+            if deleted:
+                self._clear_active_selection_if_matches(champion_id, relative_path)
+                log.info(
+                    "[DeleteMod] Deleted champion mod: champion=%s, mod=%s",
+                    champion_id,
+                    mod_name,
+                )
+            response_payload = {
+                "type": "champion-mod-deleted",
+                "success": deleted,
+                "championId": champion_id,
+                "modName": mod_name,
+            }
+            if not deleted:
+                response_payload["error"] = "Mod not found"
+            self._send_response(json.dumps(response_payload))
+        except Exception as exc:
+            log.error("[DeleteMod] Failed to delete champion mod: %s", exc)
+            self._send_response(json.dumps({
+                "type": "champion-mod-deleted",
+                "success": False,
+                "championId": champion_id,
+                "modName": mod_name,
+                "error": str(exc),
+            }))
+
+    def _handle_delete_category_mod(self, payload: dict) -> None:
+        """Permanently delete an imported mod from a category folder."""
+        category = payload.get("category")
+        mod_name = payload.get("modName")
+        if not self.mod_storage:
+            self._send_response(json.dumps({
+                "type": "category-mod-deleted",
+                "success": False,
+                "category": category,
+                "modName": mod_name,
+                "error": "Mod storage is not available",
+            }))
+            return
+        try:
+            deleted = self.mod_storage.delete_category_mod(category, mod_name)
+            if deleted:
+                log.info(
+                    "[DeleteMod] Deleted category mod: category=%s, mod=%s",
+                    category,
+                    mod_name,
+                )
+            response_payload = {
+                "type": "category-mod-deleted",
+                "success": deleted,
+                "category": category,
+                "modName": mod_name,
+            }
+            if not deleted:
+                response_payload["error"] = "Mod not found"
+            self._send_response(json.dumps(response_payload))
+        except Exception as exc:
+            log.error("[DeleteMod] Failed to delete category mod: %s", exc)
+            self._send_response(json.dumps({
+                "type": "category-mod-deleted",
+                "success": False,
+                "category": category,
+                "modName": mod_name,
+                "error": str(exc),
+            }))
+
     def _handle_dismiss_historic(self, payload: dict) -> None:
         """Dismiss historic mode (close-button on popup)"""
         try:
@@ -2021,14 +2145,7 @@ class MessageHandler:
             return
 
         category = payload.get("category")
-        if category not in {
-            self.mod_storage.CATEGORY_UI,
-            self.mod_storage.CATEGORY_VOICEOVER,
-            self.mod_storage.CATEGORY_LOADING_SCREEN,
-            self.mod_storage.CATEGORY_VFX,
-            self.mod_storage.CATEGORY_SFX,
-            self.mod_storage.CATEGORY_OTHERS,
-        }:
+        if category not in self.mod_storage.MOD_CATEGORIES:
             log.warning(f"[SkinMonitor] Invalid category for request-category-mods: {category}")
             return
 

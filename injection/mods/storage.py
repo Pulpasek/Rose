@@ -450,6 +450,117 @@ class ModStorageService:
             safe_remove_entry(temporary_dir)
             raise
 
+    def _resolve_mod_path(self, base_dir: Path, relative_path: object) -> Optional[Path]:
+        """Resolve a user-supplied relative path, guarding against traversal."""
+        if not relative_path:
+            return None
+        try:
+            candidate = (self.mods_root / str(relative_path)).resolve()
+            base_resolved = base_dir.resolve()
+        except OSError:
+            return None
+        if base_resolved != candidate and base_resolved not in candidate.parents:
+            return None
+        return candidate
+
+    def delete_champion_mod(
+        self,
+        champion_id: int | str,
+        mod_name: Optional[str] = None,
+        relative_path: Optional[str] = None,
+    ) -> bool:
+        """Delete one previously imported mod from a champion's mod folder."""
+        champion_id_int = self._to_int(champion_id)
+        if champion_id_int is None or champion_id_int <= 0:
+            raise ValueError(f"Invalid champion ID: {champion_id}")
+
+        with self._storage_lock:
+            champion_dir = self.get_champion_dir(champion_id_int)
+            target = self._resolve_mod_path(champion_dir, relative_path)
+            if target is None and mod_name:
+                try:
+                    champion_relative = champion_dir.relative_to(self.mods_root).as_posix()
+                except ValueError:
+                    champion_relative = None
+                if champion_relative:
+                    target = self._resolve_mod_path(champion_dir, f"{champion_relative}/{mod_name}")
+            if target is None or not target.exists():
+                return False
+            if target.name in {self.TARGET_METADATA, self.LEGACY_TARGET_METADATA}:
+                raise ValueError("Refusing to delete mod metadata file")
+
+            resolved_mod_name = mod_name or target.stem
+            safe_remove_entry(target)
+
+            default_targets, mod_targets = self._load_target_manifest(champion_id_int)
+            removed = False
+            for key in list(mod_targets.keys()):
+                metadata = mod_targets[key]
+                stored_name = str(metadata.get("name") or key)
+                if key == resolved_mod_name or stored_name == resolved_mod_name or key == target.name or stored_name == target.name:
+                    mod_targets.pop(key, None)
+                    removed = True
+
+            if removed:
+                manifest_path = champion_dir / self.TARGET_METADATA
+                payload = {
+                    "version": 1,
+                    "championId": champion_id_int,
+                    "targets": list(default_targets),
+                    "mods": dict(sorted(mod_targets.items())),
+                }
+                temporary_path = manifest_path.with_name(f".{manifest_path.name}.tmp")
+                temporary_path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                temporary_path.replace(manifest_path)
+
+            self._champion_listing_cache.pop(champion_id_int, None)
+            return True
+
+    def delete_category_mod(self, category: str, mod_name: str) -> bool:
+        """Delete one previously imported mod from a category folder."""
+        if category not in self.MOD_CATEGORIES:
+            raise ValueError(f"Unsupported mod category: {category}")
+        if not mod_name:
+            raise ValueError("Mod name is required")
+
+        with self._storage_lock:
+            category_dir = self.mods_root / category
+            resolved = self._resolve_mod_path(category_dir, f"{category}/{mod_name}")
+            if resolved is None or not resolved.exists():
+                return False
+            if resolved.name == self.CATEGORY_METADATA:
+                raise ValueError("Refusing to delete mod metadata file")
+
+            safe_remove_entry(resolved)
+
+            manifest_path = category_dir / self.CATEGORY_METADATA
+            try:
+                payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+            raw_mods = payload.get("mods")
+            mods = dict(raw_mods) if isinstance(raw_mods, dict) else {}
+            if mod_name in mods:
+                mods.pop(mod_name, None)
+                payload.update({
+                    "version": 1,
+                    "category": category,
+                    "mods": dict(sorted(mods.items())),
+                })
+                temporary_manifest = manifest_path.with_name(f".{manifest_path.name}.tmp")
+                temporary_manifest.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                temporary_manifest.replace(manifest_path)
+
+            return True
+
     def _load_category_manifest(self, category: str) -> set[str]:
         manifest_path = self.mods_root / category / self.CATEGORY_METADATA
         try:

@@ -2196,6 +2196,21 @@
     modsDropdownContainer.appendChild(modsDropdown);
     form.appendChild(modsDropdownContainer);
 
+    // Manage custom mods button - lets the user delete previously imported mods
+    const manageModsContainer = document.createElement("div");
+    manageModsContainer.style.marginTop = "8px";
+    manageModsContainer.style.width = "100%";
+
+    const manageModsButton = document.createElement("lol-uikit-flat-button-secondary");
+    manageModsButton.id = "manage-custom-mods-button";
+    manageModsButton.textContent = "Manage custom mods";
+    manageModsButton.style.width = "100%";
+    manageModsButton.addEventListener("click", () => {
+      openManageCustomModsDialog();
+    });
+    manageModsContainer.appendChild(manageModsButton);
+    form.appendChild(manageModsContainer);
+
     // Inject shadow DOM styles to override :host .ui-dropdown color
     let retryCount = 0;
     const MAX_RETRIES = 20;
@@ -2840,7 +2855,9 @@
     }
   }
 
-  function openChampionSelection() {
+  function openChampionSelection(mode) {
+    window.__roseChampionSelectionMode = mode === "manage" ? "manage" : "add";
+
     // Remove existing dialog if any
     const existingDialog = document.getElementById("champion-selection-dialog");
     if (existingDialog) {
@@ -2888,7 +2905,9 @@
     // Title text
     const titleWrapper = document.createElement("div");
     titleWrapper.className = "dialog-title-wrapper";
-    titleWrapper.textContent = "Select Champion";
+    titleWrapper.textContent = window.__roseChampionSelectionMode === "manage"
+      ? "Manage Mods - Select Champion"
+      : "Select Champion";
     header.appendChild(titleWrapper);
 
     flyoutContent.appendChild(header);
@@ -3010,9 +3029,15 @@
   }
 
   function handleChampionSelection(championId) {
+    const mode = window.__roseChampionSelectionMode === "manage" ? "manage" : "add";
     closeChampionSelection();
-    openSkinSelection(championId);
-    log("info", "Champion selected for custom mods: champion=" + championId);
+    if (mode === "manage") {
+      openChampionModsList(championId);
+      log("info", "Champion selected for mod management: champion=" + championId);
+    } else {
+      openSkinSelection(championId);
+      log("info", "Champion selected for custom mods: champion=" + championId);
+    }
   }
 
   function openSkinSelection(championId) {
@@ -3207,6 +3232,425 @@
       skinIds: selectedSkinIds,
     });
     log("info", `Skin selection confirmed: champion=${championId}, skins=${selectedSkinIds.join(",")}`);
+  }
+
+  // ==================== Manage Custom Mods (delete) ====================
+
+  const MANAGE_MOD_CATEGORIES = [
+    { id: "skins", name: "Skins" },
+    { id: "maps", name: "Maps" },
+    { id: "fonts", name: "Fonts" },
+    { id: "announcers", name: "Announcers" },
+    { id: "ui", name: "UI" },
+    { id: "voiceover", name: "Voiceover" },
+    { id: "loading_screen", name: "Loading Screen" },
+    { id: "vfx", name: "VFX" },
+    { id: "sfx", name: "SFX" },
+    { id: "others", name: "Others" },
+  ];
+
+  function openManageCustomModsDialog() {
+    const existingDialog = document.getElementById("manage-custom-mods-dialog");
+    if (existingDialog) {
+      existingDialog.remove();
+    }
+
+    const dialog = document.createElement("div");
+    dialog.id = "manage-custom-mods-dialog";
+    dialog.style.position = "fixed";
+    dialog.style.top = "0";
+    dialog.style.left = "0";
+    dialog.style.width = "100%";
+    dialog.style.height = "100%";
+    dialog.style.zIndex = "10001";
+    dialog.style.pointerEvents = "none";
+    document.body.appendChild(dialog);
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "backdrop";
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) {
+        closeManageCustomModsDialog();
+      }
+    });
+    dialog.appendChild(backdrop);
+
+    let flyoutFrame;
+    try {
+      flyoutFrame = document.createElement("lol-uikit-flyout-frame");
+      flyoutFrame.id = "add-custom-mods-flyout";
+      flyoutFrame.className = "flyout";
+      flyoutFrame.setAttribute("orientation", "center");
+      flyoutFrame.setAttribute("animated", "true");
+      flyoutFrame.setAttribute("show", "true");
+    } catch (e) {
+      flyoutFrame = document.createElement("div");
+      flyoutFrame.id = "add-custom-mods-flyout";
+      flyoutFrame.className = "flyout";
+    }
+    flyoutFrame.style.position = "absolute";
+    flyoutFrame.style.top = "50%";
+    flyoutFrame.style.left = "50%";
+    flyoutFrame.style.transform = "translate(-50%, -50%)";
+    flyoutFrame.style.zIndex = "10002";
+    flyoutFrame.style.pointerEvents = "all";
+
+    let flyoutContent;
+    try {
+      flyoutContent = document.createElement("lc-flyout-content");
+    } catch (e) {
+      flyoutContent = document.createElement("div");
+      flyoutContent.className = "lc-flyout-content";
+    }
+
+    const title = document.createElement("div");
+    title.className = "settings-title";
+    title.textContent = "Manage Custom Mods";
+    flyoutContent.appendChild(title);
+
+    const categoriesContainer = document.createElement("div");
+    categoriesContainer.style.display = "flex";
+    categoriesContainer.style.flexDirection = "column";
+    categoriesContainer.style.gap = "10px";
+
+    MANAGE_MOD_CATEGORIES.forEach((category) => {
+      const categoryButton = document.createElement("lol-uikit-flat-button-secondary");
+      categoryButton.textContent = category.name;
+      categoryButton.style.width = "100%";
+      categoryButton.style.padding = "12px";
+      categoryButton.addEventListener("click", () => {
+        handleManageCategorySelection(category.id);
+      });
+      categoriesContainer.appendChild(categoryButton);
+    });
+
+    flyoutContent.appendChild(categoriesContainer);
+    flyoutFrame.appendChild(flyoutContent);
+    dialog.appendChild(flyoutFrame);
+
+    flyoutFrame.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  function closeManageCustomModsDialog() {
+    const dialog = document.getElementById("manage-custom-mods-dialog");
+    if (dialog) {
+      dialog.remove();
+    }
+  }
+
+  function handleManageCategorySelection(category) {
+    closeManageCustomModsDialog();
+    if (category === "skins") {
+      openChampionSelection("manage");
+    } else {
+      openCategoryModsList(category);
+    }
+  }
+
+  function createModsListDialog(id, titleText, onBack) {
+    const existingDialog = document.getElementById(id);
+    if (existingDialog) {
+      existingDialog.remove();
+    }
+
+    const dialog = document.createElement("div");
+    dialog.id = id;
+    dialog.addEventListener("click", (e) => {
+      if (e.target === dialog) {
+        dialog.remove();
+      }
+    });
+    document.body.appendChild(dialog);
+
+    const flyoutFrame = document.createElement("div");
+    flyoutFrame.className = "flyout";
+    flyoutFrame.style.maxHeight = "75vh";
+    flyoutFrame.style.width = "700px";
+    flyoutFrame.style.boxSizing = "border-box";
+    flyoutFrame.style.overflowY = "hidden";
+    flyoutFrame.style.overflowX = "hidden";
+    flyoutFrame.addEventListener("click", (e) => e.stopPropagation());
+
+    const flyoutContent = document.createElement("div");
+    flyoutContent.className = "lc-flyout-content";
+    flyoutContent.style.display = "flex";
+    flyoutContent.style.flexDirection = "column";
+    flyoutContent.style.boxSizing = "border-box";
+
+    const header = document.createElement("div");
+    header.className = "dialog-header";
+
+    const backButton = document.createElement("button");
+    backButton.className = "back-button";
+    backButton.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+    backButton.setAttribute("aria-label", "Go back");
+    backButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dialog.remove();
+      if (onBack) onBack();
+    });
+    header.appendChild(backButton);
+
+    const titleWrapper = document.createElement("div");
+    titleWrapper.className = "dialog-title-wrapper";
+    titleWrapper.textContent = titleText;
+    header.appendChild(titleWrapper);
+    flyoutContent.appendChild(header);
+
+    const listContainer = document.createElement("div");
+    listContainer.id = `${id}-list`;
+    listContainer.style.overflowY = "auto";
+    listContainer.style.overflowX = "hidden";
+    listContainer.style.maxHeight = "60vh";
+    listContainer.style.marginTop = "12px";
+    listContainer.innerHTML = `<div style="color: #cdbe91; text-align: center; padding: 20px; font-family: 'Beaufort for LOL', serif;">Loading mods...</div>`;
+    flyoutContent.appendChild(listContainer);
+
+    flyoutFrame.appendChild(flyoutContent);
+    dialog.appendChild(flyoutFrame);
+    return { dialog, listContainer };
+  }
+
+  function renderModRow(listContainer, mod, onDelete) {
+    const row = document.createElement("div");
+    row.className = "mod-manage-row";
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.justifyContent = "space-between";
+    row.style.gap = "10px";
+    row.style.padding = "10px";
+    row.style.borderBottom = "1px solid rgba(205, 190, 145, 0.2)";
+
+    const infoWrapper = document.createElement("div");
+    infoWrapper.style.display = "flex";
+    infoWrapper.style.alignItems = "center";
+    infoWrapper.style.gap = "10px";
+    infoWrapper.style.minWidth = "0";
+
+    if (mod.thumbnailUrl) {
+      const thumb = document.createElement("img");
+      thumb.src = mod.thumbnailUrl;
+      thumb.alt = mod.name;
+      thumb.style.width = "40px";
+      thumb.style.height = "40px";
+      thumb.style.objectFit = "cover";
+      thumb.style.borderRadius = "4px";
+      thumb.onerror = function () { this.style.display = "none"; };
+      infoWrapper.appendChild(thumb);
+    }
+
+    const nameEl = document.createElement("div");
+    nameEl.textContent = mod.name;
+    nameEl.style.color = "#cdbe91";
+    nameEl.style.fontFamily = '"Beaufort for LOL", serif';
+    nameEl.style.overflow = "hidden";
+    nameEl.style.textOverflow = "ellipsis";
+    nameEl.style.whiteSpace = "nowrap";
+    infoWrapper.appendChild(nameEl);
+
+    row.appendChild(infoWrapper);
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "back-button";
+    deleteButton.textContent = "Delete";
+    deleteButton.style.flex = "0 0 auto";
+    deleteButton.style.color = "#ff6b6b";
+    deleteButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      confirmDeleteMod(mod.name, () => onDelete(deleteButton, row));
+    });
+    row.appendChild(deleteButton);
+
+    listContainer.appendChild(row);
+  }
+
+  function confirmDeleteMod(modName, onConfirm) {
+    const existing = document.getElementById("delete-mod-confirm-dialog");
+    if (existing) existing.remove();
+
+    const confirmDialog = document.createElement("div");
+    confirmDialog.id = "delete-mod-confirm-dialog";
+    confirmDialog.style.position = "fixed";
+    confirmDialog.style.top = "0";
+    confirmDialog.style.left = "0";
+    confirmDialog.style.width = "100%";
+    confirmDialog.style.height = "100%";
+    confirmDialog.style.zIndex = "10003";
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "backdrop";
+    backdrop.addEventListener("click", () => confirmDialog.remove());
+    confirmDialog.appendChild(backdrop);
+
+    const box = document.createElement("div");
+    box.className = "flyout";
+    box.style.position = "absolute";
+    box.style.top = "50%";
+    box.style.left = "50%";
+    box.style.transform = "translate(-50%, -50%)";
+    box.style.width = "360px";
+    box.style.padding = "20px";
+    box.addEventListener("click", (e) => e.stopPropagation());
+
+    const message = document.createElement("div");
+    message.style.color = "#cdbe91";
+    message.style.fontFamily = '"Beaufort for LOL", serif';
+    message.style.marginBottom = "16px";
+    message.textContent = `Delete mod "${modName}"? This cannot be undone.`;
+    box.appendChild(message);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.justifyContent = "flex-end";
+    actions.style.gap = "10px";
+
+    const cancelButton = document.createElement("lol-uikit-flat-button-secondary");
+    cancelButton.textContent = "Cancel";
+    cancelButton.addEventListener("click", () => confirmDialog.remove());
+    actions.appendChild(cancelButton);
+
+    const deleteButton = document.createElement("lol-uikit-flat-button-secondary");
+    deleteButton.textContent = "Delete";
+    deleteButton.style.color = "#ff6b6b";
+    deleteButton.addEventListener("click", () => {
+      confirmDialog.remove();
+      onConfirm();
+    });
+    actions.appendChild(deleteButton);
+
+    box.appendChild(actions);
+    confirmDialog.appendChild(box);
+    document.body.appendChild(confirmDialog);
+  }
+
+  function openChampionModsList(championId) {
+    createModsListDialog(
+      "champion-mods-manage-dialog",
+      "Manage Mods - Loading...",
+      () => openChampionSelection("manage")
+    );
+    window.__roseManageChampionId = championId;
+
+    if (bridge) bridge.send({
+      type: "request-skin-mods",
+      championId: championId,
+      skinId: Number(championId) * 1000,
+    });
+  }
+
+  function closeChampionModsList() {
+    const dialog = document.getElementById("champion-mods-manage-dialog");
+    if (dialog) dialog.remove();
+    delete window.__roseManageChampionId;
+  }
+
+  function handleManageSkinModsResponse(payload) {
+    if (Number(payload.championId) !== Number(window.__roseManageChampionId)) return;
+
+    const dialog = document.getElementById("champion-mods-manage-dialog");
+    const listContainer = document.getElementById("champion-mods-manage-dialog-list");
+    if (!dialog || !listContainer) return;
+
+    const titleWrapper = dialog.querySelector(".dialog-title-wrapper");
+    if (titleWrapper) {
+      titleWrapper.textContent = payload.championName
+        ? `Manage Mods - ${payload.championName}`
+        : "Manage Mods";
+    }
+
+    listContainer.innerHTML = "";
+    const mods = payload.mods || [];
+    if (mods.length === 0) {
+      listContainer.innerHTML = `<div style="color: #cdbe91; text-align: center; padding: 20px; font-family: 'Beaufort for LOL', serif;">No custom mods installed for this champion.</div>`;
+      return;
+    }
+
+    // De-duplicate by mod name: the same mod can target multiple skins/chromas.
+    const seen = new Set();
+    mods.forEach((mod) => {
+      if (seen.has(mod.modName)) return;
+      seen.add(mod.modName);
+      renderModRow(
+        listContainer,
+        { name: mod.modName, thumbnailUrl: mod.thumbnailUrl },
+        (deleteButton, row) => {
+          deleteButton.disabled = true;
+          deleteButton.textContent = "Deleting...";
+          if (bridge) bridge.send({
+            type: "delete-champion-mod",
+            championId: window.__roseManageChampionId,
+            modName: mod.modName,
+            relativePath: mod.relativePath,
+          });
+        }
+      );
+    });
+  }
+
+  function handleChampionModDeleted(payload) {
+    if (!payload.success) {
+      log("error", "Failed to delete champion mod: " + (payload.error || "unknown error"));
+      return;
+    }
+    log("info", `Champion mod deleted: champion=${payload.championId}, mod=${payload.modName}`);
+    if (Number(payload.championId) === Number(window.__roseManageChampionId)) {
+      openChampionModsList(payload.championId);
+    }
+  }
+
+  function openCategoryModsList(category) {
+    const categoryMeta = MANAGE_MOD_CATEGORIES.find((c) => c.id === category);
+    createModsListDialog(
+      "category-mods-manage-dialog",
+      `Manage Mods - ${categoryMeta ? categoryMeta.name : category}`,
+      () => openManageCustomModsDialog()
+    );
+    window.__roseManageCategory = category;
+
+    if (bridge) bridge.send({
+      type: "request-category-mods",
+      category: category,
+    });
+  }
+
+  function handleManageCategoryModsResponse(payload) {
+    if (payload.category !== window.__roseManageCategory) return;
+
+    const listContainer = document.getElementById("category-mods-manage-dialog-list");
+    if (!listContainer) return;
+
+    listContainer.innerHTML = "";
+    const mods = payload.mods || [];
+    if (mods.length === 0) {
+      listContainer.innerHTML = `<div style="color: #cdbe91; text-align: center; padding: 20px; font-family: 'Beaufort for LOL', serif;">No custom mods installed in this category.</div>`;
+      return;
+    }
+
+    mods.forEach((mod) => {
+      renderModRow(listContainer, { name: mod.name }, (deleteButton) => {
+        deleteButton.disabled = true;
+        deleteButton.textContent = "Deleting...";
+        if (bridge) bridge.send({
+          type: "delete-category-mod",
+          category: window.__roseManageCategory,
+          modName: mod.name,
+        });
+      });
+    });
+  }
+
+  function handleCategoryModDeleted(payload) {
+    if (!payload.success) {
+      log("error", "Failed to delete category mod: " + (payload.error || "unknown error"));
+      return;
+    }
+    log("info", `Category mod deleted: category=${payload.category}, mod=${payload.modName}`);
+    if (payload.category === window.__roseManageCategory) {
+      openCategoryModsList(payload.category);
+    }
   }
 
   function handleChampionsListResponse(payload) {
@@ -3988,6 +4432,10 @@
       bridge.subscribe("champions-list-response", handleChampionsListResponse);
       bridge.subscribe("champion-skins-response", handleChampionSkinsResponse);
       bridge.subscribe("folder-opened-response", handleFolderOpenedResponse);
+      bridge.subscribe("skin-mods-response", handleManageSkinModsResponse);
+      bridge.subscribe("category-mods-response", handleManageCategoryModsResponse);
+      bridge.subscribe("champion-mod-deleted", handleChampionModDeleted);
+      bridge.subscribe("category-mod-deleted", handleCategoryModDeleted);
 
       // On every (re)connect, sync state
       bridge.onReady(() => {
