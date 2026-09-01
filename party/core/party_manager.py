@@ -61,6 +61,7 @@ class PartyManager:
         self._personal_room_key: Optional[str] = None
         self._auto_lobby_room = AutoLobbyRoom()
         self._ignored_peer_ids = set()
+        self._auto_ignored_peer_ids = set()
         self._trusted_peer_names: Dict[int, str] = {}
         self._relay_lock = asyncio.Lock()
         self._next_reconnect_at = 0.0
@@ -69,6 +70,7 @@ class PartyManager:
         # Discovery
         self._lobby_matcher: Optional[LobbyMatcher] = None
         self._skin_collector: Optional[SkinCollector] = None
+        self._auto_lobby_member_ids: set = set()
 
         # Background tasks
         self._running = False
@@ -147,6 +149,9 @@ class PartyManager:
                 self._personal_room_key = own_room_key
 
                 if PARTY_MODE_ALWAYS_ON:
+                    self._auto_lobby_member_ids = set(
+                        self._lobby_matcher.get_all_summoner_ids()
+                    )
                     updated_at = float(
                         account.get("auto_room_updated_at") or 0
                     )
@@ -338,6 +343,7 @@ class PartyManager:
         self._personal_room_key = None
         self._auto_lobby_room.clear()
         self._trusted_peer_names = {}
+        self._auto_ignored_peer_ids = set()
 
         log.info("[PARTY] Party mode disabled")
         self._notify_state_change()
@@ -417,9 +423,11 @@ class PartyManager:
 
         if my_id:
             if PARTY_MODE_ALWAYS_ON:
-                # Automatic discovery owns the peer list; clicking remove should
-                # not leave a lingering block that prevents reconnecting to a
-                # premade lobby. Clear any stored ignore so re-discovery works.
+                # Automatic discovery owns the peer list. Clicking remove only
+                # dismisses the peer for the current lobby session; the block is
+                # forgotten as soon as they leave our lobby, so rejoining that
+                # premade lobby reconnects them automatically.
+                self._auto_ignored_peer_ids.add(sid)
                 account = self._storage.load_account(my_id)
                 self._storage.update_account(
                     my_id,
@@ -523,9 +531,24 @@ class PartyManager:
 
         # Update party state with relay members (exclude ourselves)
         current_peer_ids = set()
+        lobby_ids = None
+        if PARTY_MODE_ALWAYS_ON:
+            # Automatic mode is scoped to the current premade lobby/game: only
+            # Rose users who are actually in our party are shown. Relay room
+            # members who share the room but are in a different party (or not in
+            # our lobby at all) must never appear.
+            lobby_ids = self._auto_lobby_member_ids
+
         for member in members:
             sid = int(member.get("summoner_id", 0) or 0)
-            if sid == my_id or not sid or sid in self._ignored_peer_ids:
+            if (
+                sid == my_id
+                or not sid
+                or sid in self._ignored_peer_ids
+                or sid in self._auto_ignored_peer_ids
+            ):
+                continue
+            if lobby_ids is not None and sid not in lobby_ids:
                 continue
 
             current_peer_ids.add(sid)
@@ -567,12 +590,22 @@ class PartyManager:
         stale = [sid for sid in self.party_state.peers if sid not in current_peer_ids]
         for sid in stale:
             peer = self.party_state.peers[sid]
-            peer.connected = False
-            peer.connection_state = "connecting"
-            peer.in_lobby = False
-            if self._skin_collector:
-                self._skin_collector.clear_peer(sid)
-            log.info(f"[PARTY] Peer {sid} offline; waiting for automatic reconnect")
+            if PARTY_MODE_ALWAYS_ON:
+                # Automatic mode is scoped to the current premade lobby: peers
+                # that are no longer in the room (or our lobby) drop off the
+                # list instead of lingering as offline rows, so a friend who is
+                # not in our party stops showing up.
+                self.party_state.remove_peer(sid)
+                if self._skin_collector:
+                    self._skin_collector.clear_peer(sid)
+                log.info(f"[PARTY] Peer {sid} left automatic party; removed")
+            else:
+                peer.connected = False
+                peer.connection_state = "connecting"
+                peer.in_lobby = False
+                if self._skin_collector:
+                    self._skin_collector.clear_peer(sid)
+                log.info(f"[PARTY] Peer {sid} offline; waiting for automatic reconnect")
 
         self._notify_state_change()
 
@@ -594,7 +627,56 @@ class PartyManager:
                     await self._ensure_relay_connected()
 
                 lobby_ids = self._lobby_matcher.get_all_summoner_ids()
+                if PARTY_MODE_ALWAYS_ON:
+                    self._auto_lobby_member_ids = set(lobby_ids)
                 state_changed = False
+
+                # Reconcile the visible party with the relay room for people who
+                # are in our current lobby/game. This re-adds a previously
+                # dismissed friend the moment they are back in our premade (and
+                # no longer in the temporary dismiss set), without depending on
+                # an async relay broadcast.
+                if PARTY_MODE_ALWAYS_ON and self._relay and self._relay.members:
+                    my_id = self.party_state.my_summoner_id
+                    for member in self._relay.members:
+                        sid = int(member.get("summoner_id", 0) or 0)
+                        if (
+                            sid == my_id
+                            or not sid
+                            or sid not in lobby_ids
+                            or sid in self._auto_ignored_peer_ids
+                            or sid in self._ignored_peer_ids
+                        ):
+                            continue
+                        if sid not in self.party_state.peers:
+                            name = member.get("summoner_name", "Unknown")
+                            self._remember_peer(sid, name)
+                            self.party_state.add_peer(
+                                sid,
+                                summoner_name=name,
+                                connected=True,
+                                connection_state="connected",
+                            )
+                            self.party_state.update_peer_lobby_status(sid, True)
+                            state_changed = True
+                            log.info(f"[PARTY] Peer {name} rejoined automatic party")
+
+                # Automatic-mode dismissals are scoped to the current lobby
+                # session: once the removed peer is no longer in our lobby,
+                # forget the dismissal so rejoining that lobby reconnects them.
+                # We explicitly do NOT re-add from the relay room here -- the
+                # relay room is shared by the whole party, not just people in
+                # our current lobby, so they must only reappear through normal
+                # lobby discovery when they are actually in our lobby again.
+                if PARTY_MODE_ALWAYS_ON and self._auto_ignored_peer_ids:
+                    active_lobby_ids = self._lobby_matcher.get_lobby_summoner_ids()
+                    self._auto_ignored_peer_ids = {
+                        sid
+                        for sid in self._auto_ignored_peer_ids
+                        if sid in active_lobby_ids
+                    }
+                    state_changed = True
+
                 for sid in self.party_state.peers:
                     in_lobby = sid in lobby_ids
                     if self.party_state.peers[sid].in_lobby != in_lobby:
