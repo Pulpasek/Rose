@@ -42,17 +42,17 @@ class RandomizationFavoritesTests(unittest.TestCase):
 
             @staticmethod
             def get_chromas_for_skin(skin_id):
-                # Return chromas for each skin
+                # Return chromas for each skin (using 'id' key to match actual structure)
                 if skin_id == 4201:
                     return [
-                        {"chromaId": 4201},  # Base
-                        {"chromaId": 4201 + 1},  # Chroma 1
-                        {"chromaId": 4201 + 2},  # Chroma 2
+                        {"id": 4201, "name": "Base"},
+                        {"id": 4202, "name": "Chroma 1"},
+                        {"id": 4203, "name": "Chroma 2"},
                     ]
                 elif skin_id == 4202:
                     return [
-                        {"chromaId": 4202},  # Base
-                        {"chromaId": 4202 + 1},  # Chroma 1
+                        {"id": 4202, "name": "Base"},
+                        {"id": 4203, "name": "Chroma 1"},
                     ]
                 return []
 
@@ -62,9 +62,10 @@ class RandomizationFavoritesTests(unittest.TestCase):
         self.assertIsNotNone(selection)
         skin_name, skin_id, chroma_id = selection
         self.assertIn(skin_id, {4201, 4202})
-        # Chroma should be either the base or one of the chromas
+        # Chroma should be either the base chroma (skin_id) or one of the chromas (skin_id + offset)
         self.assertIsNotNone(chroma_id)
         self.assertGreaterEqual(chroma_id, skin_id)
+        self.assertLess(chroma_id, skin_id + 100)
 
     def test_randomization_uses_favorite_skins_and_chromas(self):
         """Test that favorites mode filters both skins and chromas"""
@@ -100,16 +101,17 @@ class RandomizationFavoritesTests(unittest.TestCase):
 
             @staticmethod
             def get_chromas_for_skin(skin_id):
+                # Return chromas with 'id' key to match actual structure
                 if skin_id == 4201:
                     return [
-                        {"chromaId": 4201},
-                        {"chromaId": 4202},
-                        {"chromaId": 4203},
+                        {"id": 4201, "name": "Base"},
+                        {"id": 4202, "name": "Chroma 1"},
+                        {"id": 4203, "name": "Chroma 2"},
                     ]
                 elif skin_id == 4202:
                     return [
-                        {"chromaId": 4202},
-                        {"chromaId": 4203},
+                        {"id": 4202, "name": "Base"},
+                        {"id": 4203, "name": "Chroma 1"},
                     ]
                 return []
 

@@ -283,11 +283,15 @@ class RandomizationHandler:
             chromas_list = self.skin_scraper.get_chromas_for_skin(skin_id)
             if chromas_list:
                 for chroma in chromas_list:
-                    chroma_id = chroma.get('chromaId') if isinstance(chroma, dict) else chroma
+                    # Chromas are stored with 'id' key, not 'chromaId'
+                    chroma_id = chroma.get('id') if isinstance(chroma, dict) else chroma
                     if chroma_id and chroma_id not in available_chromas:
                         available_chromas.append(chroma_id)
+                log.debug(f"[UI] Found {len(chromas_list)} chromas for skin {skin_id}: {[c.get('id') for c in chromas_list]}")
+            else:
+                log.debug(f"[UI] No chromas returned for skin {skin_id}")
         except Exception as e:
-            log.debug(f"[UI] Failed to get chromas for skin {skin_id}: {e}")
+            log.warning(f"[UI] Failed to get chromas for skin {skin_id}: {e}")
         
         # If in favorites mode, filter to favorite chromas only
         if mode == "favorites" and champion_id:
