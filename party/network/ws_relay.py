@@ -23,7 +23,7 @@ try:
 except ImportError:
     _CONFIGURED_URL = ""
 
-DEFAULT_RELAY_URL = "https://rose-party-relay.rose-party-relay.workers.dev"
+DEFAULT_RELAY_URL = "wss://rose-party-relay.rose-party-relay.workers.dev"
 RELAY_URL = os.environ.get("ROSE_RELAY_URL", _CONFIGURED_URL or DEFAULT_RELAY_URL)
 PING_INTERVAL = 25.0
 
