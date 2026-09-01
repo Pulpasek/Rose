@@ -22,7 +22,52 @@ class RandomizationFavoritesTests(unittest.TestCase):
         self.assertEqual(state.random_mode_type, "all")
         self.assertIsNone(state.random_chroma_id)
 
-    def test_randomization_uses_favorite_skins_only(self):
+    def test_randomization_selects_skin_and_chroma(self):
+        """Test that randomization selects both a skin and chroma"""
+        state = SharedState()
+        state.locked_champ_id = 42
+        handler = RandomizationHandler(state, skin_scraper=None)
+
+        class DummyCache:
+            champion_id = 42
+            skins = [
+                {"skinId": 4200, "skinName": "Base"},
+                {"skinId": 4201, "skinName": "Skin 1"},
+                {"skinId": 4202, "skinName": "Skin 2"},
+            ]
+            chroma_id_map = {}
+
+        class DummyScraper:
+            cache = DummyCache()
+
+            @staticmethod
+            def get_chromas_for_skin(skin_id):
+                # Return chromas for each skin
+                if skin_id == 4201:
+                    return [
+                        {"chromaId": 4201},  # Base
+                        {"chromaId": 4201 + 1},  # Chroma 1
+                        {"chromaId": 4201 + 2},  # Chroma 2
+                    ]
+                elif skin_id == 4202:
+                    return [
+                        {"chromaId": 4202},  # Base
+                        {"chromaId": 4202 + 1},  # Chroma 1
+                    ]
+                return []
+
+        handler.skin_scraper = DummyScraper()
+
+        selection = handler.select_random_skin(mode="all")
+        self.assertIsNotNone(selection)
+        skin_name, skin_id, chroma_id = selection
+        self.assertIn(skin_id, {4201, 4202})
+        # Chroma should be either the base or one of the chromas
+        self.assertIsNotNone(chroma_id)
+        self.assertGreaterEqual(chroma_id, skin_id)
+
+    def test_randomization_uses_favorite_skins_and_chromas(self):
+        """Test that favorites mode filters both skins and chromas"""
         state = SharedState()
         state.locked_champ_id = 42
         handler = RandomizationHandler(state, skin_scraper=None)
@@ -30,7 +75,13 @@ class RandomizationFavoritesTests(unittest.TestCase):
         favorites_module.save_favorites_data({
             "version": 1,
             "favorites": {
-                "42": {"skins": [4201, 4202], "chromas": {"4201": [4201], "4202": [4202]}}
+                "42": {
+                    "skins": [4201, 4202],
+                    "chromas": {
+                        "4201": [4201, 4202],  # Favorite chromas for skin 4201
+                        "4202": [4202]  # Favorite chromas for skin 4202
+                    }
+                }
             }
         })
 
@@ -49,13 +100,31 @@ class RandomizationFavoritesTests(unittest.TestCase):
 
             @staticmethod
             def get_chromas_for_skin(skin_id):
+                if skin_id == 4201:
+                    return [
+                        {"chromaId": 4201},
+                        {"chromaId": 4202},
+                        {"chromaId": 4203},
+                    ]
+                elif skin_id == 4202:
+                    return [
+                        {"chromaId": 4202},
+                        {"chromaId": 4203},
+                    ]
                 return []
 
         handler.skin_scraper = DummyScraper()
 
         selection = handler.select_random_skin(mode="favorites")
         self.assertIsNotNone(selection)
-        self.assertIn(selection[1], {4201, 4202})
+        skin_name, skin_id, chroma_id = selection
+        # Should be one of the favorite skins
+        self.assertIn(skin_id, {4201, 4202})
+        # Should be one of the favorite chromas for this skin
+        if skin_id == 4201:
+            self.assertIn(chroma_id, {4201, 4202})
+        elif skin_id == 4202:
+            self.assertIn(chroma_id, {4202})
 
     def test_force_base_skin_marks_random_mode_before_transition(self):
         state = SharedState()
