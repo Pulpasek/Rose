@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Analytics thread for periodic user tracking pings
+Analytics thread for periodic user tracking pings.
 """
 
 import threading
@@ -17,11 +17,11 @@ log = get_logger()
 
 class AnalyticsThread(threading.Thread):
     """Background thread that tracks startup, presence, and shutdown."""
-    
+
     def __init__(self, state: SharedState, ping_interval: Optional[float] = None):
         """
         Initialize analytics thread.
-        
+
         Args:
             state: SharedState instance for checking stop flag
             ping_interval: Interval between presence heartbeats in seconds (defaults to ANALYTICS_PING_INTERVAL_S)
@@ -31,7 +31,7 @@ class AnalyticsThread(threading.Thread):
         self.ping_interval = ANALYTICS_PING_INTERVAL_S if ping_interval is None else ping_interval
         self.client = AnalyticsClient()
         self._stop_event = threading.Event()
-    
+
     def run(self) -> None:
         """Send a startup ping, periodic heartbeats, and a best-effort close ping."""
         log.info("Analytics thread started (heartbeat interval: %ss)", self.ping_interval)
@@ -52,8 +52,7 @@ class AnalyticsThread(threading.Thread):
             self.client.send_ping(APP_VERSION, event="close", timeout=2)
 
         log.info("Analytics thread stopped")
-    
-    def stop(self) -> None:
-        """Stop the analytics thread"""
-        self._stop_event.set()
 
+    def stop(self) -> None:
+        """Stop the analytics thread."""
+        self._stop_event.set()

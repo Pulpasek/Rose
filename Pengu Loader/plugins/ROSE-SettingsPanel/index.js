@@ -177,10 +177,35 @@
       border-radius: 0 !important;
       padding: 20px !important;
       width: 100% !important;
+      max-height: 80vh !important;
+      max-width: 420px !important;
       box-sizing: border-box !important;
       border: none !important;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
       margin: 0 !important;
+      overflow-x: hidden !important;
+      overflow-y: auto !important;
+      scrollbar-width: thin;
+      scrollbar-color: #c8aa6e rgba(0, 0, 0, 0.25);
+    }
+
+    #${FLYOUT_ID} lc-flyout-content::-webkit-scrollbar,
+    #${FLYOUT_ID} .lc-flyout-content::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    #${FLYOUT_ID} lc-flyout-content::-webkit-scrollbar-track,
+    #${FLYOUT_ID} .lc-flyout-content::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.25);
+      border-left: 1px solid rgba(70, 55, 20, 0.55);
+    }
+
+    #${FLYOUT_ID} lc-flyout-content::-webkit-scrollbar-thumb,
+    #${FLYOUT_ID} .lc-flyout-content::-webkit-scrollbar-thumb {
+      background: linear-gradient(to bottom, rgba(200, 155, 60, 0.22), rgba(70, 55, 20, 0.85));
+      border: 1px solid rgba(70, 55, 20, 0.95);
+      border-radius: 10px;
+      min-height: 28px;
     }
     
     #${FLYOUT_ID} .settings-title {
@@ -1713,6 +1738,8 @@
     // Use absolute positioning within the fixed panel container
     flyoutFrame.style.position = "absolute";
     flyoutFrame.style.overflow = "visible";
+    flyoutFrame.style.maxHeight = "80vh";
+    flyoutFrame.style.maxWidth = "420px";
     // Position below the icon, centered horizontally on the icon
     flyoutFrame.style.top = `${iconRect.bottom + 45}px`;
     flyoutFrame.style.left = `${iconRect.left + iconRect.width / 2}px`;
@@ -1755,6 +1782,11 @@
       flyoutContent = document.createElement("div");
       flyoutContent.className = "lc-flyout-content";
     }
+    flyoutContent.style.maxHeight = "80vh";
+    flyoutContent.style.overflowY = "auto";
+    flyoutContent.style.overflowX = "hidden";
+    flyoutContent.style.scrollbarWidth = "thin";
+    flyoutContent.style.scrollbarColor = "#c8aa6e rgba(0, 0, 0, 0.25)";
 
     // Create settings form
     const form = document.createElement("div");
