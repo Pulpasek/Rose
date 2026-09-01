@@ -164,6 +164,7 @@ class PartyManager:
                         getattr(self.state, "phase", ""),
                         self._lobby_matcher.get_lobby_summoner_ids(),
                         my_summoner_id,
+                        self._get_rose_lobby_members(),
                     )
                     self._active_room_key = auto_room_key or own_room_key
                     self._active_room_host_id = my_summoner_id
@@ -405,22 +406,48 @@ class PartyManager:
             return False, f"Unexpected error: {e}"
 
     async def remove_peer(self, summoner_id: int):
-        """Forget a persistent friend and stop applying their selections."""
+        """Forget a persistent friend and stop applying their selections.
+
+        In automatic lobby-discovery mode removing a peer is only a dismiss: the
+        peer is NOT permanently blocked, so they will be discovered and connect
+        again automatically the next time we share a premade lobby with them.
+        """
         my_id = self.party_state.my_summoner_id
+        sid = int(summoner_id)
+
         if my_id:
-            self._storage.forget_peer(my_id, summoner_id)
-        self._ignored_peer_ids.add(int(summoner_id))
-        self._trusted_peer_names.pop(int(summoner_id), None)
-        self.party_state.remove_peer(summoner_id)
+            if PARTY_MODE_ALWAYS_ON:
+                # Automatic discovery owns the peer list; clicking remove should
+                # not leave a lingering block that prevents reconnecting to a
+                # premade lobby. Clear any stored ignore so re-discovery works.
+                account = self._storage.load_account(my_id)
+                self._storage.update_account(
+                    my_id,
+                    ignored_peers=[
+                        value
+                        for value in account.get("ignored_peers", [])
+                        if int(value) != sid
+                    ],
+                )
+            else:
+                self._storage.forget_peer(my_id, sid)
+
+        if not PARTY_MODE_ALWAYS_ON:
+            self._ignored_peer_ids.add(sid)
+        self._trusted_peer_names.pop(sid, None)
+        self.party_state.remove_peer(sid)
         if self._skin_collector:
-            self._skin_collector.clear_peer(summoner_id)
+            self._skin_collector.clear_peer(sid)
 
         # If this friend hosted the saved room, return to our own stable room.
+        # (Applies only to manual token mode; automatic mode stays inherent to
+        # the auto room and re-syncs on its own.)
         if (
-            my_id
+            not PARTY_MODE_ALWAYS_ON
+            and my_id
             and self._my_key
-            and self._active_room_host_id == int(summoner_id)
-            and int(summoner_id) != int(my_id)
+            and self._active_room_host_id == sid
+            and sid != int(my_id)
         ):
             own_room_key = compute_room_key(my_id, self._my_key)
             self._active_room_key = own_room_key
@@ -679,6 +706,27 @@ class PartyManager:
                 connection_state="connecting",
             )
 
+    def _get_rose_lobby_members(self) -> set:
+        """Lobby members who are running Rose (i.e. present in the relay room).
+
+        Rose users prove themselves by joining a Rose relay room, so the room's
+        member list is the authoritative signal. We intersect those members with
+        the current premade lobby so a non-Rose friend in the lobby never
+        contributes to the room key.
+        """
+        if not self._lobby_matcher:
+            return set()
+
+        lobby_ids = self._lobby_matcher.get_lobby_summoner_ids()
+        rose_ids = {
+            int(member.get("summoner_id", 0) or 0)
+            for member in (self._relay.members if self._relay else [])
+        }
+        my_id = self.party_state.my_summoner_id
+        if my_id:
+            rose_ids.add(int(my_id))
+        return {sid for sid in rose_ids if sid in lobby_ids}
+
     async def _sync_auto_lobby_room(self):
         """Follow the premade lobby while freezing the room during the game."""
         if (
@@ -692,6 +740,7 @@ class PartyManager:
             getattr(self.state, "phase", ""),
             self._lobby_matcher.get_lobby_summoner_ids(),
             self.party_state.my_summoner_id,
+            self._get_rose_lobby_members(),
         )
         target_room_key = auto_room_key or self._personal_room_key
         auto_active = bool(auto_room_key)
