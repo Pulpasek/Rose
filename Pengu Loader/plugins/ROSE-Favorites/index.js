@@ -446,9 +446,17 @@
 
   function handleFavoritesState(data) {
     log("info", "Received favorites-state", data);
+    if (data.championId !== undefined && data.championId !== null) {
+      if (currentChampionId !== data.championId) {
+        currentFavorites = { skins: [], chromas: {} };
+      }
+      currentChampionId = data.championId;
+    } else if (data.championId === null || data.championId === undefined) {
+      currentFavorites = { skins: [], chromas: {} };
+      currentChampionId = null;
+    }
     if (data.championFavorites) currentFavorites = data.championFavorites;
     if (data.allFavorites) allFavorites = data.allFavorites;
-    if (data.championId) currentChampionId = data.championId;
     updateUI();
   }
 

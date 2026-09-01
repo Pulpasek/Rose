@@ -10,10 +10,7 @@ from typing import Optional, Tuple
 from state import SharedState
 from utils.core.logging import get_logger
 from utils.core.utilities import is_base_skin
-from utils.core.favorites import (
-    get_favorite_skins_for_champion,
-    get_favorite_chromas_for_skin,
-)
+from utils.core.favorites import get_favorite_skins_for_champion
 
 log = get_logger()
 
@@ -82,8 +79,16 @@ class RandomizationHandler:
             log.warning("[UI] Cannot force base skin - no locked champion")
             return False
         
-        # Set flag to prevent cancellation during randomization
+        # Set flag to prevent cancellation during randomization BEFORE the
+        # temporary base-skin force. If the UI detects the base skin transition
+        # before the random roll is activated, it cancels the mode and leaves the
+        # champion stuck on the default skin.
         self._randomization_in_progress = True
+        self.state.random_mode_active = True
+        self.state.random_mode_type = mode
+        self.state.random_skin_name = None
+        self.state.random_skin_id = None
+        self.state.random_chroma_id = None
         
         # Get champion's base skin ID (champion_id * 1000)
         champion_id = self.state.locked_champ_id
@@ -94,6 +99,8 @@ class RandomizationHandler:
         try:
             if not lcu:
                 log.warning("[UI] No LCU instance available")
+                self.state.random_mode_active = False
+                self.state.random_mode_type = "all"
                 self._randomization_in_progress = False
                 return False
             
@@ -105,11 +112,15 @@ class RandomizationHandler:
                 return True
             else:
                 log.warning("[UI] Failed to force champion base skin")
+                self.state.random_mode_active = False
+                self.state.random_mode_type = "all"
                 self._randomization_in_progress = False
                 self._randomization_started = False
                 return False
         except Exception as e:
             log.error(f"[UI] Error forcing champion base skin: {e}")
+            self.state.random_mode_active = False
+            self.state.random_mode_type = "all"
             self._randomization_in_progress = False
             self._randomization_started = False
             return False
@@ -141,13 +152,26 @@ class RandomizationHandler:
             # Select random skin
             random_selection = self.select_random_skin(mode=mode)
             if random_selection:
-                random_skin_name, random_skin_id, selected_chroma_id = random_selection
+                random_skin_name, random_skin_id, _ = random_selection
                 self.state.random_skin_name = random_skin_name
                 self.state.random_skin_id = random_skin_id
-                self.state.random_chroma_id = selected_chroma_id
+                self.state.random_chroma_id = None
                 self.state.random_mode_active = True
                 self.state.random_mode_type = mode
-                log.info(f"[UI] Random skin selected: {random_skin_name} (ID: {random_skin_id}, Chroma: {selected_chroma_id}, Mode: {mode})")
+                log.info(f"[UI] Random skin selected: {random_skin_name} (ID: {random_skin_id}, Mode: {mode})")
+
+                # Apply the random choice to the LCU skin selection immediately so
+                # the lobby preview and picked skin actually change instead of
+                # staying on the champion's default skin.
+                lcu = getattr(self.skin_scraper, 'lcu', None) if self.skin_scraper else None
+                if lcu and random_skin_id is not None:
+                    try:
+                        if lcu.set_my_selection_skin(random_skin_id):
+                            log.info(f"[UI] Applied random skin to LCU selection: {random_skin_id}")
+                        else:
+                            log.warning(f"[UI] Failed to apply random skin to LCU selection: {random_skin_id}")
+                    except Exception as e:
+                        log.warning(f"[UI] Exception while applying random skin to LCU selection: {e}")
                 
                 # Broadcast random mode state to JavaScript
                 try:
@@ -187,13 +211,13 @@ class RandomizationHandler:
         self._randomization_started = False
     
     def select_random_skin(self, mode: str = "all") -> Optional[Tuple[str, int, Optional[int]]]:
-        """Select a random skin from available skins (excluding base champion skin)
+        """Select a random skin from available skins (excluding the champion base skin)
         
         Args:
             mode: "all" to roll from all skins, "favorites" to roll strictly from favorites
             
         Returns:
-            Tuple of (skin_name, skin_id, chroma_id) or None if no skin available
+            Tuple of (skin_name, skin_id, None) or None if no skin is available
         """
         if not self.skin_scraper or not self.skin_scraper.cache.skins:
             log.warning("[UI] No skins available for random selection")
@@ -245,70 +269,8 @@ class RandomizationHandler:
         
         english_skin_name = localized_skin_name
         
-        # Check if this skin has chromas
-        chromas = self.skin_scraper.get_chromas_for_skin(skin_id)
-        if chromas:
-            log.info(f"[UI] Skin '{english_skin_name}' has {len(chromas)} chromas")
-            
-            # If favorites mode, check if specific chromas are favorited for this skin
-            fav_chromas = get_favorite_chromas_for_skin(champion_id, skin_id) if (mode == "favorites" and champion_id) else []
-            
-            all_options = []
-            
-            # If specific chromas were favorited:
-            if fav_chromas:
-                # If base style (skin_id itself) is favorited, include base style
-                if skin_id in fav_chromas:
-                    all_options.append({
-                        'id': skin_id,
-                        'name': english_skin_name,
-                        'type': 'base',
-                        'chromaId': None
-                    })
-                # Include favorited chromas
-                for chroma in chromas:
-                    c_id = chroma.get('id')
-                    if c_id in fav_chromas:
-                        localized_chroma_name = chroma.get('name', f'{english_skin_name} Chroma')
-                        all_options.append({
-                            'id': c_id,
-                            'name': localized_chroma_name,
-                            'type': 'chroma',
-                            'chromaId': c_id
-                        })
-            
-            # If no chroma restrictions or no favorited chromas matched, allow all
-            if not all_options:
-                # Add base skin
-                all_options.append({
-                    'id': skin_id,
-                    'name': english_skin_name,
-                    'type': 'base',
-                    'chromaId': None
-                })
-                # Add all chromas
-                for chroma in chromas:
-                    localized_chroma_name = chroma.get('name', f'{english_skin_name} Chroma')
-                    c_id = chroma.get('id')
-                    all_options.append({
-                        'id': c_id,
-                        'name': localized_chroma_name,
-                        'type': 'chroma',
-                        'chromaId': c_id
-                    })
-            
-            # Select random option from pool
-            selected_option = random.choice(all_options)
-            selected_chroma_name = selected_option['name']
-            selected_chroma_id = selected_option.get('chromaId')
-            selected_type = selected_option['type']
-            
-            log.info(f"[UI] Random selection: {selected_type} '{selected_chroma_name}' (Base Skin: {english_skin_name} [{skin_id}], Chroma ID: {selected_chroma_id})")
-            return (english_skin_name, skin_id, selected_chroma_id)
-        else:
-            # No chromas, return the base skin name and ID
-            log.info(f"[UI] Skin '{english_skin_name}' has no chromas, using base skin")
-            return (english_skin_name, skin_id, None)
+        log.info(f"[UI] Using skin-only selection for '{english_skin_name}' (ID: {skin_id})")
+        return (english_skin_name, skin_id, None)
     
     def update_dice_button(self, current_skin_id: Optional[int]):
         """Broadcast dice button state to JavaScript"""

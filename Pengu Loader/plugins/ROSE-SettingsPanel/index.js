@@ -175,7 +175,7 @@
       background-color: #010a13 !important;
       background-image: none !important;
       border-radius: 0 !important;
-      padding: 20px !important;
+      padding: 20px 20px 12px !important;
       width: 100% !important;
       max-height: 80vh !important;
       max-width: 420px !important;
@@ -187,6 +187,42 @@
       overflow-y: auto !important;
       scrollbar-width: thin;
       scrollbar-color: #c8aa6e rgba(0, 0, 0, 0.25);
+      display: flex !important;
+      flex-direction: column !important;
+      min-height: 0 !important;
+    }
+
+    #${FLYOUT_ID} .settings-form,
+    #${FLYOUT_ID} form,
+    #${FLYOUT_ID} .lc-flyout-content > form,
+    #${FLYOUT_ID} lc-flyout-content > form {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 8px !important;
+      min-height: 0 !important;
+      flex: 1 1 auto !important;
+      width: 100% !important;
+      overflow-y: auto !important;
+      padding-bottom: 6px !important;
+      height: 100% !important;
+    }
+
+    #${FLYOUT_ID} .settings-footer {
+      position: relative !important;
+      z-index: 2 !important;
+      background: rgba(1, 10, 19, 0.96) !important;
+      padding-top: 12px !important;
+      margin-top: auto !important;
+      border-top: 1px solid rgba(200, 170, 110, 0.2) !important;
+      display: flex !important;
+      justify-content: flex-end !important;
+      align-items: center !important;
+      width: calc(100% + 40px) !important;
+      margin-left: -20px !important;
+      padding-left: 20px !important;
+      padding-right: 20px !important;
+      box-sizing: border-box !important;
+      flex-shrink: 0 !important;
     }
 
     #${FLYOUT_ID} lc-flyout-content::-webkit-scrollbar,
@@ -685,11 +721,12 @@
       flex: 0 0 auto;
       background: transparent;
       border: 1px solid rgba(255, 107, 107, 0.5);
-      border-radius: 3px;
+      border-radius: 4px;
       color: #ff6b6b;
       font-family: "Beaufort for LOL", serif;
-      font-size: 12px;
-      padding: 6px 14px;
+      font-size: 13px;
+      min-height: 34px;
+      padding: 8px 16px;
       cursor: pointer;
       transition: background 0.2s, border-color 0.2s, color 0.2s;
     }
@@ -708,11 +745,12 @@
       flex: 0 0 auto;
       background: transparent;
       border: 1px solid rgba(200, 170, 110, 0.5);
-      border-radius: 3px;
+      border-radius: 4px;
       color: #c8aa6e;
       font-family: "Beaufort for LOL", serif;
-      font-size: 12px;
-      padding: 6px 14px;
+      font-size: 13px;
+      min-height: 34px;
+      padding: 8px 16px;
       cursor: pointer;
       transition: background 0.2s, border-color 0.2s, color 0.2s;
     }
@@ -1053,6 +1091,50 @@
     .champion-card:hover .champion-name {
       color: #cdbe91;
     }
+    .champion-card.is-favorite {
+      border-color: rgba(200, 170, 110, 0.35);
+      background: rgba(200, 170, 110, 0.07);
+    }
+    .champion-card.is-favorite .champion-name {
+      color: #f0e6d2;
+    }
+    .champion-favorite-toggle {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: 1px solid rgba(200, 170, 110, 0.7);
+      border-radius: 50%;
+      background: rgba(1, 10, 19, 0.8);
+      color: #c8aa6e;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+      z-index: 2;
+    }
+    .champion-favorite-toggle:hover {
+      transform: scale(1.06);
+      background: rgba(200, 170, 110, 0.15);
+      color: #f0e6d2;
+    }
+    .champion-favorite-toggle.is-favorite {
+      background: rgba(200, 170, 110, 0.2);
+      color: #f0e6d2;
+    }
+    .champion-favorite-toggle.header-toggle {
+      position: static;
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      border-width: 1.5px;
+      font-size: 14px;
+    }
 
     #skins-list {
       flex: 1 1 auto;
@@ -1099,6 +1181,7 @@
       transition: border-color 0.2s, box-shadow 0.2s;
     }
     .skin-card-front {
+      position: relative;
       z-index: 2;
     }
     .skin-card-back {
@@ -1171,6 +1254,35 @@
       background: #463714;
       color: #f0e6d2;
       transform: translateY(-1px);
+    }
+    .skin-favorite-toggle {
+      position: absolute;
+      top: 7px;
+      left: 7px;
+      z-index: 3;
+      width: 22px;
+      height: 22px;
+      border: 1px solid rgba(200, 170, 110, 0.8);
+      border-radius: 50%;
+      background: rgba(1, 10, 19, 0.8);
+      color: #c8aa6e;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+      transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+    }
+    .skin-favorite-toggle:hover {
+      transform: scale(1.06);
+      background: rgba(200, 170, 110, 0.15);
+      color: #f0e6d2;
+    }
+    .skin-favorite-toggle.is-favorite {
+      background: rgba(200, 170, 110, 0.2);
+      color: #f0e6d2;
     }
     .skin-card-back-header {
       display: flex;
@@ -1297,13 +1409,13 @@
 
   function handleSettingsData(payload) {
     currentSettings = {
-      threshold: payload.threshold || 0.5,
-      monitorAutoResumeTimeout: payload.monitorAutoResumeTimeout || 60,
-      autostart: payload.autostart || false,
-      hideEmptyCategories: payload.hideEmptyCategories || false,
-      gamePath: payload.gamePath || "",
-      gamePathValid: payload.gamePathValid || false,
-      version: payload.version || "",
+      threshold: Number.isFinite(Number(payload?.threshold)) ? Number(payload.threshold) : 0.5,
+      monitorAutoResumeTimeout: Number.isFinite(Number(payload?.monitorAutoResumeTimeout)) ? Number(payload.monitorAutoResumeTimeout) : 60,
+      autostart: payload?.autostart === true || payload?.autostart === "true",
+      hideEmptyCategories: payload?.hideEmptyCategories === true || payload?.hideEmptyCategories === "true",
+      gamePath: typeof payload?.gamePath === "string" ? payload.gamePath : "",
+      gamePathValid: payload?.gamePathValid === true || payload?.gamePathValid === "true",
+      version: payload?.version || "",
     };
     // Update version badge if the panel is already open
     const badge = document.getElementById("rose-version-badge");
@@ -1625,6 +1737,22 @@
   function handleSettingsSaved(payload) {
     if (payload.success) {
       log("info", "Settings saved successfully", payload);
+      const thresholdSlider = document.getElementById("threshold-slider");
+      const timeoutSlider = document.getElementById("timeout-slider");
+      const autostartCheckbox = document.getElementById("autostart-checkbox");
+      const hideEmptyCategoriesCheckbox = document.getElementById("hide-empty-categories-checkbox");
+      const pathInput = document.getElementById("game-path-input");
+
+      currentSettings = {
+        threshold: thresholdSlider ? Number.parseFloat(thresholdSlider.value) / 100 : currentSettings.threshold,
+        monitorAutoResumeTimeout: timeoutSlider ? Number.parseInt(timeoutSlider.value, 10) : currentSettings.monitorAutoResumeTimeout,
+        autostart: autostartCheckbox ? autostartCheckbox.checked : currentSettings.autostart,
+        hideEmptyCategories: hideEmptyCategoriesCheckbox ? hideEmptyCategoriesCheckbox.checked : currentSettings.hideEmptyCategories,
+        gamePath: pathInput ? pathInput.value.trim() : currentSettings.gamePath,
+        gamePathValid: currentSettings.gamePathValid,
+        version: currentSettings.version,
+      };
+
       // Show success message to user
       const saveButton = document.getElementById("save-button");
       if (saveButton) {
@@ -1647,7 +1775,8 @@
       } catch (e) {}
       _pendingSave = null;
 
-      // Refresh settings + diagnostics + badges after save
+      // Refresh settings + diagnostics + badges after save. Do it after updating the in-memory
+      // state so the form does not snap back to stale server defaults while the backend catches up.
       requestSettings();
       requestDiagnostics();
     } else {
@@ -2212,8 +2341,10 @@
 
     // Add custom mods dropdown
     const modsDropdownContainer = document.createElement("div");
-    modsDropdownContainer.style.marginTop = "8px";
+    modsDropdownContainer.style.display = "block";
     modsDropdownContainer.style.width = "100%";
+    modsDropdownContainer.style.marginTop = "10px";
+    modsDropdownContainer.style.marginBottom = "10px";
 
     const modsDropdown = document.createElement("lol-uikit-framed-dropdown");
     modsDropdown.id = "add-custom-mods-dropdown";
@@ -2482,8 +2613,10 @@
 
     // Manage custom mods dropdown
     const manageDropdownContainer = document.createElement("div");
-    manageDropdownContainer.style.marginTop = "8px";
+    manageDropdownContainer.style.display = "block";
     manageDropdownContainer.style.width = "100%";
+    manageDropdownContainer.style.marginTop = "10px";
+    manageDropdownContainer.style.marginBottom = "10px";
 
     const manageDropdown = document.createElement("lol-uikit-framed-dropdown");
     manageDropdown.id = "manage-custom-mods-dropdown";
@@ -2685,16 +2818,24 @@
     });
     form.appendChild(penguUIButton);
 
-    // Save button (moved to last position)
+    // Save button (moved to last position and kept sticky so long forms stay usable)
     const saveButton = document.createElement("lol-uikit-flat-button-secondary");
     saveButton.id = "save-button";
     saveButton.textContent = "Save";
     saveButton.style.marginTop = "8px";
     saveButton.style.width = "21%";
+    saveButton.style.minWidth = "96px";
+    saveButton.style.minHeight = "38px";
+    saveButton.style.padding = "10px 18px";
     saveButton.addEventListener("click", () => {
       saveSettings();
     });
-    form.appendChild(saveButton);
+
+    const saveFooter = document.createElement("div");
+    saveFooter.className = "settings-footer";
+    saveFooter.style.marginTop = "auto";
+    saveFooter.appendChild(saveButton);
+    form.appendChild(saveFooter);
 
     // Links section
     const linksSection = document.createElement("div");
@@ -3053,9 +3194,18 @@
     const monitorAutoResumeTimeout = timeoutSlider
       ? parseInt(timeoutSlider.value)
       : 60;
-    const autostart = autostartCheckbox ? autostartCheckbox.checked : false;
-    const hideEmptyCategories = hideEmptyCategoriesCheckbox ? hideEmptyCategoriesCheckbox.checked : false;
+    const autostart = !!(autostartCheckbox && autostartCheckbox.checked);
+    const hideEmptyCategories = !!(hideEmptyCategoriesCheckbox && hideEmptyCategoriesCheckbox.checked);
     const gamePath = pathInput ? pathInput.value.trim() : "";
+
+    currentSettings = {
+      ...currentSettings,
+      threshold: Math.max(0.3, Math.min(2.0, threshold)),
+      monitorAutoResumeTimeout: Math.max(20, Math.min(180, monitorAutoResumeTimeout)),
+      autostart,
+      hideEmptyCategories,
+      gamePath,
+    };
 
     // Clamp threshold between 0.30 and 2.0
     const clampedThreshold = Math.max(0.3, Math.min(2.0, threshold));
@@ -3219,6 +3369,191 @@
     }
   }
 
+  const CHAMPION_FAVORITES_STORAGE_KEY = "rose-favorite-champions-v1";
+
+  function getFavoriteChampionIds() {
+    try {
+      const rawValue = window.localStorage.getItem(CHAMPION_FAVORITES_STORAGE_KEY);
+      if (!rawValue) return new Set();
+      const parsed = JSON.parse(rawValue);
+      if (!Array.isArray(parsed)) return new Set();
+      return new Set(parsed.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0));
+    } catch (e) {
+      log("warn", "Failed to read champion favorites from localStorage", e);
+      return new Set();
+    }
+  }
+
+  function saveFavoriteChampionIds(favoriteIds) {
+    try {
+      const sortedIds = Array.from(favoriteIds)
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+        .sort((a, b) => a - b);
+      window.localStorage.setItem(CHAMPION_FAVORITES_STORAGE_KEY, JSON.stringify(sortedIds));
+    } catch (e) {
+      log("warn", "Failed to save champion favorites to localStorage", e);
+    }
+  }
+
+  function isChampionFavorited(championId) {
+    return getFavoriteChampionIds().has(Number(championId));
+  }
+
+  function toggleChampionFavorite(championId, championName) {
+    const favoriteIds = getFavoriteChampionIds();
+    const championKey = Number(championId);
+    if (!Number.isFinite(championKey) || championKey <= 0) return;
+
+    if (favoriteIds.has(championKey)) {
+      favoriteIds.delete(championKey);
+    } else {
+      favoriteIds.add(championKey);
+    }
+
+    saveFavoriteChampionIds(favoriteIds);
+    log("info", `${favoriteIds.has(championKey) ? "Favorited" : "Unfavorited"} champion ${championName || championKey}`);
+
+    const activeChampionGrid = document.getElementById("champions-grid");
+    if (activeChampionGrid && window.__roseAllChampions) {
+      renderChampionsGrid(window.__roseAllChampions);
+    }
+
+    const currentChampionHeaderButton = document.querySelector(".champion-favorite-toggle.header-toggle[data-champion-id='" + championKey + "']");
+    if (currentChampionHeaderButton) {
+      currentChampionHeaderButton.classList.toggle("is-favorite", favoriteIds.has(championKey));
+      currentChampionHeaderButton.textContent = favoriteIds.has(championKey) ? "★" : "☆";
+      currentChampionHeaderButton.setAttribute("aria-label", favoriteIds.has(championKey) ? `Unfavorite ${championName || championKey}` : `Favorite ${championName || championKey}`);
+    }
+  }
+
+  function sortChampionsWithFavorites(champions) {
+    const favoriteIds = getFavoriteChampionIds();
+    return [...champions].sort((a, b) => {
+      const aFav = favoriteIds.has(Number(a.id));
+      const bFav = favoriteIds.has(Number(b.id));
+      if (aFav !== bFav) return aFav ? -1 : 1;
+      const aName = String(a.name || "").toLowerCase();
+      const bName = String(b.name || "").toLowerCase();
+      return aName.localeCompare(bName);
+    });
+  }
+
+  function getFavoriteSkinIdsForChampion(championId) {
+    try {
+      const storageKey = `rose-favorite-skins-v1:${Number(championId)}`;
+      const rawValue = window.localStorage.getItem(storageKey);
+      if (!rawValue) return new Set();
+      const parsed = JSON.parse(rawValue);
+      if (!Array.isArray(parsed)) return new Set();
+      return new Set(parsed.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0));
+    } catch (e) {
+      log("warn", "Failed to read favorite skin IDs", e);
+      return new Set();
+    }
+  }
+
+  function saveFavoriteSkinIdsForChampion(championId, favoriteIds) {
+    try {
+      const storageKey = `rose-favorite-skins-v1:${Number(championId)}`;
+      const sortedIds = Array.from(favoriteIds)
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+        .sort((a, b) => a - b);
+      window.localStorage.setItem(storageKey, JSON.stringify(sortedIds));
+    } catch (e) {
+      log("warn", "Failed to save favorite skin IDs", e);
+    }
+  }
+
+  function isSkinFavorited(championId, skinId) {
+    return getFavoriteSkinIdsForChampion(championId).has(Number(skinId));
+  }
+
+  function toggleSkinFavorite(championId, skinId, skinName) {
+    const favoriteIds = getFavoriteSkinIdsForChampion(championId);
+    const numericSkinId = Number(skinId);
+    if (!Number.isFinite(numericSkinId) || numericSkinId <= 0) return;
+
+    if (favoriteIds.has(numericSkinId)) {
+      favoriteIds.delete(numericSkinId);
+    } else {
+      favoriteIds.add(numericSkinId);
+    }
+
+    saveFavoriteSkinIdsForChampion(championId, favoriteIds);
+    log("info", `${favoriteIds.has(numericSkinId) ? "Favorited" : "Unfavorited"} skin ${skinName || numericSkinId} for champion ${championId}`);
+
+    const currentList = document.getElementById("skins-list");
+    if (currentList) {
+      const skinsList = currentList.querySelector(".skins-list-container");
+      if (skinsList) {
+        const skinCards = Array.from(skinsList.querySelectorAll(".skin-card"));
+        const sortedCards = [...skinCards].sort((a, b) => {
+          const aId = Number(a.dataset.baseSkinId || a.dataset.skinId || 0);
+          const bId = Number(b.dataset.baseSkinId || b.dataset.skinId || 0);
+          const aFav = getFavoriteSkinIdsForChampion(championId).has(aId);
+          const bFav = getFavoriteSkinIdsForChampion(championId).has(bId);
+          if (aFav !== bFav) return aFav ? -1 : 1;
+          return aId - bId;
+        });
+        sortedCards.forEach((card) => skinsList.appendChild(card));
+      }
+    }
+
+    const headerButton = document.querySelector(".champion-favorite-toggle.header-toggle[data-champion-id='" + Number(championId) + "']");
+    if (headerButton) {
+      headerButton.classList.toggle("is-favorite", getFavoriteSkinIdsForChampion(championId).has(numericSkinId));
+    }
+  }
+
+  function sortSkinsWithFavorites(skins, championId) {
+    const favoriteIds = getFavoriteSkinIdsForChampion(championId);
+    return [...skins].sort((a, b) => {
+      const aId = Number(a.skinId || a.id || 0);
+      const bId = Number(b.skinId || b.id || 0);
+      const aFav = favoriteIds.has(aId);
+      const bFav = favoriteIds.has(bId);
+      if (aFav !== bFav) return aFav ? -1 : 1;
+      return aId - bId;
+    });
+  }
+
+  function createChampionFavoriteToggle(championId, championName, buttonClass = "") {
+    const favoriteButton = document.createElement("button");
+    favoriteButton.type = "button";
+    favoriteButton.className = `champion-favorite-toggle ${buttonClass}`.trim();
+    favoriteButton.dataset.championId = String(championId);
+    favoriteButton.textContent = isChampionFavorited(championId) ? "★" : "☆";
+    favoriteButton.classList.toggle("is-favorite", isChampionFavorited(championId));
+    favoriteButton.setAttribute("aria-label", isChampionFavorited(championId) ? `Unfavorite ${championName || championId}` : `Favorite ${championName || championId}`);
+    favoriteButton.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleChampionFavorite(championId, championName);
+    };
+    return favoriteButton;
+  }
+
+  function createSkinFavoriteToggle(championId, skinId, skinName, buttonClass = "") {
+    const favoriteButton = document.createElement("button");
+    favoriteButton.type = "button";
+    favoriteButton.className = `skin-favorite-toggle ${buttonClass}`.trim();
+    favoriteButton.dataset.skinId = String(skinId);
+    favoriteButton.textContent = isSkinFavorited(championId, skinId) ? "★" : "☆";
+    favoriteButton.classList.toggle("is-favorite", isSkinFavorited(championId, skinId));
+    favoriteButton.setAttribute("aria-label", isSkinFavorited(championId, skinId) ? `Unfavorite ${skinName || skinId}` : `Favorite ${skinName || skinId}`);
+    favoriteButton.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSkinFavorite(championId, skinId, skinName);
+      favoriteButton.textContent = isSkinFavorited(championId, skinId) ? "★" : "☆";
+      favoriteButton.classList.toggle("is-favorite", isSkinFavorited(championId, skinId));
+      favoriteButton.setAttribute("aria-label", isSkinFavorited(championId, skinId) ? `Unfavorite ${skinName || skinId}` : `Favorite ${skinName || skinId}`);
+    };
+    return favoriteButton;
+  }
+
   function openChampionSelection(mode) {
     window.__roseChampionSelectionMode = mode === "manage" ? "manage" : "add";
 
@@ -3364,16 +3699,21 @@
     const championsGrid = document.getElementById("champions-grid");
     if (!championsGrid) return;
 
+    const sortedChampions = sortChampionsWithFavorites(champions);
     championsGrid.innerHTML = "";
 
-    if (champions.length === 0) {
+    if (sortedChampions.length === 0) {
       championsGrid.innerHTML = `<div style="grid-column: 1 / -1; color: #cdbe91; text-align: center; padding: 20px; font-family: 'Beaufort for LOL', serif;">No champions found matching your search.</div>`;
       return;
     }
 
-    champions.forEach((champion) => {
+    sortedChampions.forEach((champion) => {
       const card = document.createElement("div");
-      card.className = "champion-card";
+      card.className = `champion-card ${isChampionFavorited(champion.id) ? "is-favorite" : ""}`.trim();
+      card.style.position = "relative";
+
+      const favoriteButton = createChampionFavoriteToggle(champion.id, champion.name);
+      card.appendChild(favoriteButton);
 
       const img = document.createElement("img");
       img.src = `/lol-game-data/assets/v1/champion-icons/${champion.id}.png`;
@@ -3463,6 +3803,9 @@
     titleWrapper.className = "dialog-title-wrapper";
     titleWrapper.textContent = "Select Skins & Chromas";
     header.appendChild(titleWrapper);
+
+    const championFavoriteButton = createChampionFavoriteToggle(championId, "", "header-toggle");
+    header.appendChild(championFavoriteButton);
 
     flyoutContent.appendChild(header);
 
@@ -3691,7 +4034,7 @@
     return { dialog, listContainer };
   }
 
-  function renderModRow(listContainer, mod, onDelete, onRename) {
+  function renderModRow(listContainer, mod, onDelete, onRename, onAddImage) {
     const row = document.createElement("div");
     row.className = "mod-manage-row";
     row.style.display = "flex";
@@ -3738,6 +4081,18 @@
     actions.style.alignItems = "center";
     actions.style.gap = "8px";
     actions.style.flex = "0 0 auto";
+
+    if (onAddImage) {
+      const addImageButton = document.createElement("button");
+      addImageButton.type = "button";
+      addImageButton.className = "mod-rename-button";
+      addImageButton.textContent = "Add Image";
+      addImageButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onAddImage(mod);
+      });
+      actions.appendChild(addImageButton);
+    }
 
     if (onRename) {
       const renameButton = document.createElement("button");
@@ -3897,6 +4252,38 @@
     delete window.__roseManageChampionId;
   }
 
+  function handleModImageSelected(mod, file) {
+    if (!file || !mod) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = String(reader.result || "").split(",")[1];
+      if (!base64) {
+        log("error", "No image data available for upload");
+        return;
+      }
+      if (bridge) bridge.send({
+        type: "set-mod-image",
+        championId: window.__roseManageChampionId,
+        modName: mod.modName,
+        relativePath: mod.relativePath,
+        imageData: base64,
+        mimeType: file.type || "image/png",
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function addModImage(mod) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg,image/jpg";
+    input.onchange = (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (file) handleModImageSelected(mod, file);
+    };
+    input.click();
+  }
+
   function handleManageSkinModsResponse(payload) {
     if (Number(payload.championId) !== Number(window.__roseManageChampionId)) return;
 
@@ -3918,7 +4305,6 @@
       return;
     }
 
-    // De-duplicate by path: the same folder can appear once per target skin.
     const seen = new Set();
     mods.forEach((mod) => {
       const dedupeKey = mod.relativePath || mod.modName;
@@ -3926,7 +4312,7 @@
       seen.add(dedupeKey);
       renderModRow(
         listContainer,
-        { name: mod.modName, displayName: mod.displayName, thumbnailUrl: mod.thumbnailUrl },
+        { name: mod.modName, displayName: mod.displayName, thumbnailUrl: mod.thumbnailUrl, modName: mod.modName, relativePath: mod.relativePath },
         (deleteButton, row) => {
           deleteButton.disabled = true;
           deleteButton.textContent = "Deleting...";
@@ -3947,9 +4333,21 @@
             relativePath: mod.relativePath,
             newName: newName,
           });
-        }
+        },
+        (modEntry) => addModImage(modEntry)
       );
     });
+  }
+
+  function handleModImageSet(payload) {
+    if (!payload || !payload.success) {
+      log("error", "Failed to set mod image: " + (payload?.error || "unknown error"));
+      return;
+    }
+    const championId = payload.championId;
+    if (championId && Number(championId) === Number(window.__roseManageChampionId)) {
+      openChampionModsList(Number(championId));
+    }
   }
 
   function handleChampionModDeleted(payload) {
@@ -4129,6 +4527,18 @@
       if (titleWrapper) {
         titleWrapper.textContent = `Select Skins & Chromas - ${payload.championName}`;
       }
+      const favoriteButton = header.querySelector(".champion-favorite-toggle.header-toggle");
+      if (favoriteButton) {
+        favoriteButton.dataset.championId = String(championId);
+        favoriteButton.textContent = isChampionFavorited(championId) ? "★" : "☆";
+        favoriteButton.classList.toggle("is-favorite", isChampionFavorited(championId));
+        favoriteButton.setAttribute("aria-label", isChampionFavorited(championId) ? `Unfavorite ${payload.championName}` : `Favorite ${payload.championName}`);
+        favoriteButton.onclick = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          toggleChampionFavorite(championId, payload.championName);
+        };
+      }
     }
 
     // Get or create the container inside the scrollable
@@ -4147,7 +4557,7 @@
       return;
     }
 
-    const baseSkins = skins.filter((skin) => !skin.isChroma);
+    const baseSkins = sortSkinsWithFavorites(skins.filter((skin) => !skin.isChroma), championId);
     const chromasByBaseSkin = new Map();
     skins.filter((skin) => skin.isChroma).forEach((chroma) => {
       const baseSkinId = Number(chroma.baseSkinId);
@@ -4179,6 +4589,10 @@
       front.dataset.targetSkinId = String(baseSkinId);
       front.setAttribute("role", "button");
       front.setAttribute("aria-pressed", "false");
+      front.style.position = "relative";
+
+      const favoriteButton = createSkinFavoriteToggle(championId, baseSkinId, skin.name || `Skin ${baseSkinId}`);
+      front.appendChild(favoriteButton);
 
       const img = document.createElement("img");
       img.src = getTilePath(skin);
@@ -4849,6 +5263,7 @@
       bridge.subscribe("category-mod-deleted", handleCategoryModDeleted);
       bridge.subscribe("champion-mod-renamed", handleChampionModRenamed);
       bridge.subscribe("category-mod-renamed", handleCategoryModRenamed);
+      bridge.subscribe("mod-image-set", handleModImageSet);
 
       // On every (re)connect, sync state
       bridge.onReady(() => {

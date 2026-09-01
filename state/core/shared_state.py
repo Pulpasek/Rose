@@ -85,7 +85,9 @@ class SharedState:
     # Random skin selection
     random_skin_name: Optional[str] = None  # Selected random skin for injection
     random_skin_id: Optional[int] = None  # Selected random skin/chroma ID for injection
+    random_chroma_id: Optional[int] = None  # Selected random chroma ID for the current roll
     random_mode_active: bool = False  # Tracks if randomization is active
+    random_mode_type: str = "all"  # "all" or "favorites" - which dice mode is active
 
     # Historic mode (remember last injected unowned skin per champion)
     historic_mode_active: bool = False  # Tracks if HistoricMode is active

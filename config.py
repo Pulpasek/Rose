@@ -90,6 +90,7 @@ def get_config_float(section: str, option: str, fallback: float) -> float:
 
 
 def set_config_option(section: str, option: str, value: str) -> None:
+    global _CONFIG_MTIME
     config_path = get_config_file_path()
     config = configparser.ConfigParser()
     if config_path.exists():
@@ -103,8 +104,17 @@ def set_config_option(section: str, option: str, value: str) -> None:
     try:
         with open(config_path, "w", encoding="utf-8") as fh:
             config.write(fh)
+        _CONFIG_MTIME = config_path.stat().st_mtime
+        if not _CONFIG.has_section(section):
+            _CONFIG.add_section(section)
+        _CONFIG.set(section, option, value)
     except Exception as e:
         log.warning(f"Failed to write config file: {e}")
+
+
+def get_config_bool(section: str, option: str, fallback: bool = False) -> bool:
+    value = get_config_option(section, option, str(fallback).lower())
+    return (value or str(fallback).lower()).strip().lower() in {"1", "true", "yes", "on"}
 
 
 # =============================================================================

@@ -248,6 +248,8 @@ class MessageHandler:
             self._handle_rename_champion_mod(payload)
         elif payload_type == "rename-category-mod":
             self._handle_rename_category_mod(payload)
+        elif payload_type == "set-mod-image":
+            self._handle_set_mod_image(payload)
         elif payload_type == "dismiss-historic":
             self._handle_dismiss_historic(payload)
         # Party mode messages
@@ -1995,6 +1997,43 @@ class MessageHandler:
                 "error": str(exc),
             }))
 
+    def _handle_set_mod_image(self, payload: dict) -> None:
+        """Attach or replace a custom image for a champion mod."""
+        if not self.mod_storage:
+            self._send_response(json.dumps({
+                "type": "mod-image-set",
+                "success": False,
+                "championId": payload.get("championId"),
+                "modName": payload.get("modName"),
+                "error": "Mod storage is not available",
+            }))
+            return
+        try:
+            image_path = self.mod_storage.set_mod_image(
+                champion_id=payload.get("championId"),
+                mod_name=payload.get("modName"),
+                relative_path=payload.get("relativePath"),
+                image_data=payload.get("imageData"),
+                mime_type=payload.get("mimeType") or "image/png",
+            )
+            self._send_response(json.dumps({
+                "type": "mod-image-set",
+                "success": True,
+                "championId": payload.get("championId"),
+                "modName": payload.get("modName"),
+                "relativePath": payload.get("relativePath"),
+                "imagePath": image_path,
+            }))
+        except Exception as exc:
+            log.error("[ModImage] Failed to set mod image: %s", exc)
+            self._send_response(json.dumps({
+                "type": "mod-image-set",
+                "success": False,
+                "championId": payload.get("championId"),
+                "modName": payload.get("modName"),
+                "error": str(exc),
+            }))
+
     def _handle_dismiss_historic(self, payload: dict) -> None:
         """Dismiss historic mode (close-button on popup)"""
         try:
@@ -2570,7 +2609,7 @@ class MessageHandler:
 
             set_config_option("General", "hide_empty_categories", "true" if hide_empty_categories else "false")
             log.info(f"[SkinMonitor] Hide empty mod categories updated to {hide_empty_categories}")
-            
+
             if game_path and game_path.strip():
                 if not self._is_valid_local_league_path(game_path):
                     self._send_settings_save_error("League path must be a valid local League of Legends folder.")

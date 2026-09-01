@@ -8,6 +8,7 @@ Handles mods organized by category: skins, maps, fonts, announcers, others
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
 import hashlib
 import json
 import shutil
@@ -564,6 +565,67 @@ class ModStorageService:
             )
             temporary_manifest.replace(manifest_path)
             return clean_name
+
+    def set_mod_image(
+        self,
+        champion_id: int | str,
+        mod_name: str,
+        relative_path: Optional[str] = None,
+        image_data: Optional[str] = None,
+        mime_type: str = "image/png",
+    ) -> str:
+        """Persist an image for a custom skin mod under a META/image.png path."""
+        champion_id_int = self._to_int(champion_id)
+        if champion_id_int is None or champion_id_int <= 0:
+            raise ValueError(f"Invalid champion ID: {champion_id}")
+        if not mod_name or self._is_unsafe_mod_identity(mod_name):
+            raise ValueError("Mod name is required")
+        if not image_data:
+            raise ValueError("Image data is required")
+
+        stripped = image_data.strip()
+        if stripped.startswith("data:"):
+            header, _, encoded = stripped.partition(",")
+            if not encoded:
+                raise ValueError("Image data is empty")
+            mime_type = header.split(";", 1)[0].replace("data:", "") or mime_type
+            image_data = encoded
+
+        try:
+            payload = base64.b64decode(image_data, validate=True)
+        except Exception as exc:
+            raise ValueError(f"Invalid image payload: {exc}") from exc
+
+        if not payload:
+            raise ValueError("Image payload is empty")
+
+        with self._storage_lock:
+            champion_dir = self.get_champion_dir(champion_id_int)
+            candidate = None
+            if relative_path and not self._is_unsafe_mod_identity(relative_path):
+                candidate = self._resolve_mod_path(champion_dir, relative_path)
+            if candidate is None:
+                candidate = next(
+                    (
+                        entry for entry in champion_dir.iterdir()
+                        if entry.is_dir() and entry.name == mod_name
+                    ),
+                    None,
+                )
+            if candidate is None:
+                candidate = champion_dir / mod_name
+                if not candidate.exists():
+                    raise ValueError("Mod not found")
+
+            meta_dir = candidate / "META"
+            meta_dir.mkdir(parents=True, exist_ok=True)
+            image_file = meta_dir / "image.png"
+            if mime_type.lower() not in {"image/png", "image/jpeg", "image/jpg"}:
+                raise ValueError("Only PNG/JPG images are supported")
+            if mime_type.lower().endswith("jpg"):
+                image_file = meta_dir / "image.jpg"
+            image_file.write_bytes(payload)
+            return str(image_file.relative_to(self.mods_root)).replace("\\", "/")
 
     def import_mod_file(
         self,
