@@ -42,6 +42,11 @@ VersionInfoDescription={#MyAppDescription}
 VersionInfoProductName={#MyAppName}
 ; Prevent install/uninstall while Rose is running (mutex is created by the running app)
 AppMutex={#MyAppMutex}
+; Detect and prompt to close running Rose processes before overwriting files
+CloseApplications=yes
+CloseApplicationsFilter=*.exe,*.dll,*.chm
+; Don't attempt to relaunch Rose (it doesn't register RegisterApplicationRestart)
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -103,6 +108,48 @@ begin
   end;
 end;
 
+{ Silent safety-net: force-kill remaining Rose processes that the Restart Manager
+  (CloseApplications) might not have closed before files are overwritten. }
+procedure _KillProcessByName(const AppName: String);
+var
+  WbemLocator, WMIService, WbemObjectSet, WbemObject: Variant;
+  I: Integer;
+begin
+  try
+    WbemLocator := CreateOleObject('WbemScripting.SWbemLocator');
+    WMIService := WbemLocator.ConnectServer('localhost', 'root\CIMV2');
+    WbemObjectSet := WMIService.ExecQuery(
+      'SELECT * FROM Win32_Process WHERE Name="' + AppName + '"');
+    if not VarIsNull(WbemObjectSet) and (WbemObjectSet.Count > 0) then
+    begin
+      for I := 0 to WbemObjectSet.Count - 1 do
+      begin
+        WbemObject := WbemObjectSet.ItemIndex(I);
+        if not VarIsNull(WbemObject) then
+        begin
+          try
+            WbemObject.Terminate(0);
+          except
+          end;
+          WbemObject := Unassigned;
+        end;
+      end;
+    end;
+  except
+    { If WMI fails, rely on CloseApplications to have handled it }
+  end;
+end;
+
+procedure _KillRoseProcesses();
+var
+  RoseProcessNames: array of string;
+  I: Integer;
+begin
+  RoseProcessNames := ['Rose.exe', 'RoseDev.exe', 'Pengu Loader.exe', 'mod-tools.exe', 'runoverlay.exe', 'mkoverlay.exe'];
+  for I := 0 to GetArrayLength(RoseProcessNames) - 1 do
+    _KillProcessByName(RoseProcessNames[I]);
+end;
+
 function InitializeUninstall(): Boolean;
 var
   RoseRunning: Boolean;
@@ -152,6 +199,12 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  if CurStep = ssInstall then
+  begin
+    { Safety-net: ensure no Rose processes are still locking files (silent) }
+    _KillRoseProcesses();
+  end;
+
   if CurStep = ssPostInstall then
   begin
     // Create registry entries for Windows Apps list

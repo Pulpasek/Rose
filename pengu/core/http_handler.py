@@ -218,7 +218,7 @@ class HTTPHandler:
                 {
                     "Content-Type": content_type,
                     **cors_headers,
-                    "Cache-Control": "public, max-age=3600",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
                 },
                 file_data,
             )

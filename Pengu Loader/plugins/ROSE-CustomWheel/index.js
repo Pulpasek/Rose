@@ -2878,6 +2878,14 @@
       bridge.subscribe("category-mods-response", (data) => handleCategoryModsResponse({ detail: data }));
       bridge.subscribe("others-response", (data) => handleOthersResponse({ detail: data }));
       bridge.subscribe("champion-locked", (data) => handleChampionLocked({ detail: data }));
+      bridge.subscribe("mod-image-set", (data) => {
+        if (!data || !data.success) return;
+        // A mod thumbnail was changed: bypass the 750ms dedup so the UI
+        // re-fetches fresh thumbnailUrls / mod metadata.
+        lastSkinModsRequestKey = null;
+        lastSkinModsRequestAt = 0;
+        requestModsForCurrentSkin();
+      });
       bridge.subscribe("custom-mod-state", (data) => {
         if (!data) return;
         if (!data.active) {

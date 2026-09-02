@@ -5,6 +5,7 @@ Create Windows installer for Rose using Inno Setup
 """
 
 import sys
+import os
 import subprocess
 import shutil
 from pathlib import Path
@@ -121,7 +122,28 @@ def create_installer():
         print(f"Copied {ico_icon} to {icon_dst}")
     
     print("\n[2/3] Compiling installer...")
-    
+
+    # Kill any running Rose_Setup processes that would lock the output file
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "Rose_Setup.exe"],
+            capture_output=True, timeout=10
+        )
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "Rose_Setup.tmp"],
+            capture_output=True, timeout=10
+        )
+    except Exception:
+        pass
+
+    # Remove stale output file so Inno Setup doesn't hit Error 32 (file in use)
+    stale_setup = installer_dir / "Rose_Setup.exe"
+    if stale_setup.exists():
+        try:
+            stale_setup.unlink()
+        except OSError:
+            pass
+
     # Compile the installer
     cmd = [iscc_path, str(ROOT / "installer.iss")]
     print(f"Running: {' '.join(cmd)}")

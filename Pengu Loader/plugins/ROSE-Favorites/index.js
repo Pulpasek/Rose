@@ -277,8 +277,13 @@
     const champSelectEl = document.querySelector(
       ".skin-selection-carousel, #champ-select, .champ-select-bg, .champion-select-main-container, .skin-selection-carousel-container"
     );
-    if (isInChampSelect || champSelectEl) {
-      // Remove all star buttons from DOM when in Champ Select
+    // Check if a Rose settings dialog is open — ROSE-Favorites must never
+    // inject its star buttons inside Rose's own settings/champion/skin dialogs.
+    const roseDialogEl = document.querySelector(
+      "#rose-settings-panel, #rose-settings-flyout, #champion-selection-dialog, #skin-selection-dialog, #champion-mods-manage-dialog, #add-custom-mods-dialog, #rename-mod-dialog, #delete-mod-confirm-dialog"
+    );
+    if (isInChampSelect || champSelectEl || roseDialogEl) {
+      // Remove all star buttons from DOM when in Champ Select or Rose settings UI
       document.querySelectorAll(".rose-title-star-btn, .rose-chroma-fav-btn").forEach((btn) => btn.remove());
 
       // Still dispatch update to ROSE-RandomSkin so it knows favorite counts

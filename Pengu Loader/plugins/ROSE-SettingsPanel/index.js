@@ -30,6 +30,34 @@
 
   let bridge = null;
 
+  // Manages-list favorites (favorite champions + favorite skins) persisted to
+  // disk via the Python backend so they survive League/Rose restarts.
+  let allManageFavorites = { favoriteChampions: [], favoriteSkins: {} };
+
+  function setAllManageFavorites(favorites) {
+    if (!favorites) return;
+    const champions = Array.isArray(favorites.favoriteChampions)
+      ? favorites.favoriteChampions
+      : [];
+    const skins = (favorites.favoriteSkins && typeof favorites.favoriteSkins === "object")
+      ? favorites.favoriteSkins
+      : {};
+    allManageFavorites = {
+      favoriteChampions: champions.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0),
+      favoriteSkins: {},
+    };
+    Object.keys(skins).forEach((champKey) => {
+      const ids = Array.isArray(skins[champKey])
+        ? skins[champKey].map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+        : [];
+      if (ids.length) allManageFavorites.favoriteSkins[champKey] = ids;
+    });
+  }
+
+  function handleManageFavoritesData(data) {
+    if (data && data.favorites) setAllManageFavorites(data.favorites);
+  }
+
   function waitForBridge() {
     return new Promise((resolve, reject) => {
       const timeout = 10000;
@@ -3369,50 +3397,32 @@
     }
   }
 
-  const CHAMPION_FAVORITES_STORAGE_KEY = "rose-favorite-champions-v1";
-
   function getFavoriteChampionIds() {
-    try {
-      const rawValue = window.localStorage.getItem(CHAMPION_FAVORITES_STORAGE_KEY);
-      if (!rawValue) return new Set();
-      const parsed = JSON.parse(rawValue);
-      if (!Array.isArray(parsed)) return new Set();
-      return new Set(parsed.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0));
-    } catch (e) {
-      log("warn", "Failed to read champion favorites from localStorage", e);
-      return new Set();
-    }
-  }
-
-  function saveFavoriteChampionIds(favoriteIds) {
-    try {
-      const sortedIds = Array.from(favoriteIds)
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id) && id > 0)
-        .sort((a, b) => a - b);
-      window.localStorage.setItem(CHAMPION_FAVORITES_STORAGE_KEY, JSON.stringify(sortedIds));
-    } catch (e) {
-      log("warn", "Failed to save champion favorites to localStorage", e);
-    }
+    return new Set(allManageFavorites.favoriteChampions);
   }
 
   function isChampionFavorited(championId) {
-    return getFavoriteChampionIds().has(Number(championId));
+    return allManageFavorites.favoriteChampions.includes(Number(championId));
   }
 
   function toggleChampionFavorite(championId, championName) {
-    const favoriteIds = getFavoriteChampionIds();
     const championKey = Number(championId);
     if (!Number.isFinite(championKey) || championKey <= 0) return;
 
-    if (favoriteIds.has(championKey)) {
-      favoriteIds.delete(championKey);
-    } else {
-      favoriteIds.add(championKey);
+    const wasFavorite = allManageFavorites.favoriteChampions.includes(championKey);
+    if (bridge) {
+      bridge.send({ type: "manage-favorite-champion-toggle", championId: championKey });
     }
 
-    saveFavoriteChampionIds(favoriteIds);
-    log("info", `${favoriteIds.has(championKey) ? "Favorited" : "Unfavorited"} champion ${championName || championKey}`);
+    // Update the local cache immediately for responsive UI; the backend
+    // response (manage-favorites-data) will confirm with the persisted data.
+    if (wasFavorite) {
+      allManageFavorites.favoriteChampions = allManageFavorites.favoriteChampions.filter((id) => id !== championKey);
+    } else {
+      allManageFavorites.favoriteChampions.push(championKey);
+      allManageFavorites.favoriteChampions.sort((a, b) => a - b);
+    }
+    log("info", `${wasFavorite ? "Unfavorited" : "Favorited"} champion ${championName || championKey}`);
 
     const activeChampionGrid = document.getElementById("champions-grid");
     if (activeChampionGrid && window.__roseAllChampions) {
@@ -3421,9 +3431,9 @@
 
     const currentChampionHeaderButton = document.querySelector(".champion-favorite-toggle.header-toggle[data-champion-id='" + championKey + "']");
     if (currentChampionHeaderButton) {
-      currentChampionHeaderButton.classList.toggle("is-favorite", favoriteIds.has(championKey));
-      currentChampionHeaderButton.textContent = favoriteIds.has(championKey) ? "★" : "☆";
-      currentChampionHeaderButton.setAttribute("aria-label", favoriteIds.has(championKey) ? `Unfavorite ${championName || championKey}` : `Favorite ${championName || championKey}`);
+      currentChampionHeaderButton.classList.toggle("is-favorite", !wasFavorite);
+      currentChampionHeaderButton.textContent = !wasFavorite ? "★" : "☆";
+      currentChampionHeaderButton.setAttribute("aria-label", (!wasFavorite) ? `Unfavorite ${championName || championKey}` : `Favorite ${championName || championKey}`);
     }
   }
 
@@ -3440,30 +3450,8 @@
   }
 
   function getFavoriteSkinIdsForChampion(championId) {
-    try {
-      const storageKey = `rose-favorite-skins-v1:${Number(championId)}`;
-      const rawValue = window.localStorage.getItem(storageKey);
-      if (!rawValue) return new Set();
-      const parsed = JSON.parse(rawValue);
-      if (!Array.isArray(parsed)) return new Set();
-      return new Set(parsed.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0));
-    } catch (e) {
-      log("warn", "Failed to read favorite skin IDs", e);
-      return new Set();
-    }
-  }
-
-  function saveFavoriteSkinIdsForChampion(championId, favoriteIds) {
-    try {
-      const storageKey = `rose-favorite-skins-v1:${Number(championId)}`;
-      const sortedIds = Array.from(favoriteIds)
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id) && id > 0)
-        .sort((a, b) => a - b);
-      window.localStorage.setItem(storageKey, JSON.stringify(sortedIds));
-    } catch (e) {
-      log("warn", "Failed to save favorite skin IDs", e);
-    }
+    const ids = allManageFavorites.favoriteSkins[String(Number(championId))];
+    return new Set(Array.isArray(ids) ? ids : []);
   }
 
   function isSkinFavorited(championId, skinId) {
@@ -3471,18 +3459,31 @@
   }
 
   function toggleSkinFavorite(championId, skinId, skinName) {
-    const favoriteIds = getFavoriteSkinIdsForChampion(championId);
     const numericSkinId = Number(skinId);
     if (!Number.isFinite(numericSkinId) || numericSkinId <= 0) return;
 
-    if (favoriteIds.has(numericSkinId)) {
-      favoriteIds.delete(numericSkinId);
-    } else {
-      favoriteIds.add(numericSkinId);
+    if (bridge) {
+      bridge.send({ type: "manage-favorite-skin-toggle", championId: Number(championId), skinId: numericSkinId });
     }
 
-    saveFavoriteSkinIdsForChampion(championId, favoriteIds);
-    log("info", `${favoriteIds.has(numericSkinId) ? "Favorited" : "Unfavorited"} skin ${skinName || numericSkinId} for champion ${championId}`);
+    // Update the local cache immediately for responsive UI; the backend
+    // response (manage-favorites-data) will confirm with the persisted data.
+    const champKey = String(Number(championId));
+    const skinIds = Array.isArray(allManageFavorites.favoriteSkins[champKey])
+      ? [...allManageFavorites.favoriteSkins[champKey]]
+      : [];
+    const wasFavorite = skinIds.includes(numericSkinId);
+    if (wasFavorite) {
+      allManageFavorites.favoriteSkins[champKey] = skinIds.filter((id) => id !== numericSkinId);
+    } else {
+      skinIds.push(numericSkinId);
+      skinIds.sort((a, b) => a - b);
+      allManageFavorites.favoriteSkins[champKey] = skinIds;
+    }
+    if (!allManageFavorites.favoriteSkins[champKey].length) {
+      delete allManageFavorites.favoriteSkins[champKey];
+    }
+    log("info", `${wasFavorite ? "Unfavorited" : "Favorited"} skin ${skinName || numericSkinId} for champion ${championId}`);
 
     const currentList = document.getElementById("skins-list");
     if (currentList) {
@@ -3994,11 +3995,14 @@
     flyoutFrame.style.overflowX = "hidden";
     flyoutFrame.style.position = "relative";
     flyoutFrame.style.zIndex = "10002";
+    flyoutFrame.style.display = "flex";
+    flyoutFrame.style.flexDirection = "column";
+    flyoutFrame.style.minHeight = "0";
     flyoutFrame.addEventListener("click", (e) => e.stopPropagation());
 
     const flyoutContent = document.createElement("div");
     flyoutContent.className = "lc-flyout-content";
-    flyoutContent.style.cssText = "display:flex;flex-direction:column;box-sizing:border-box;background:#010a13;border:1px solid #c8aa6e;padding:20px;width:100%;box-shadow:0 4px 12px rgba(0,0,0,0.5);color:#cdbe91;font-family:'Beaufort for LOL',serif;";
+    flyoutContent.style.cssText = "display:flex;flex-direction:column;box-sizing:border-box;background:#010a13;border:1px solid #c8aa6e;padding:20px;width:100%;box-shadow:0 4px 12px rgba(0,0,0,0.5);color:#cdbe91;font-family:'Beaufort for LOL',serif;flex:1 1 auto;min-height:0;overflow:hidden;";
 
     const header = document.createElement("div");
     header.className = "dialog-header";
@@ -4024,7 +4028,8 @@
     listContainer.id = `${id}-list`;
     listContainer.style.overflowY = "auto";
     listContainer.style.overflowX = "hidden";
-    listContainer.style.maxHeight = "60vh";
+    listContainer.style.flex = "1 1 auto";
+    listContainer.style.minHeight = "0";
     listContainer.style.marginTop = "12px";
     listContainer.innerHTML = `<div style="color: #cdbe91; text-align: center; padding: 20px; font-family: 'Beaufort for LOL', serif;">Loading mods...</div>`;
     flyoutContent.appendChild(listContainer);
@@ -4034,7 +4039,7 @@
     return { dialog, listContainer };
   }
 
-  function renderModRow(listContainer, mod, onDelete, onRename, onAddImage) {
+  function renderModRow(listContainer, mod, onDelete, onRename, onAddImage, onExport, onToggleSelect) {
     const row = document.createElement("div");
     row.className = "mod-manage-row";
     row.style.display = "flex";
@@ -4044,11 +4049,36 @@
     row.style.padding = "10px";
     row.style.borderBottom = "1px solid rgba(205, 190, 145, 0.2)";
 
+    const leftWrapper = document.createElement("div");
+    leftWrapper.style.display = "flex";
+    leftWrapper.style.alignItems = "center";
+    leftWrapper.style.gap = "10px";
+    leftWrapper.style.minWidth = "0";
+    leftWrapper.style.flex = "1 1 auto";
+
+    if (typeof onToggleSelect === "function") {
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "mod-select-checkbox";
+      checkbox.checked = Boolean(mod.__selected);
+      checkbox.style.flex = "0 0 auto";
+      checkbox.style.width = "16px";
+      checkbox.style.height = "16px";
+      checkbox.style.accentColor = "#c8aa6e";
+      checkbox.__mod = mod;
+      checkbox.addEventListener("change", (e) => {
+        e.stopPropagation();
+        onToggleSelect(mod, checkbox.checked);
+      });
+      leftWrapper.appendChild(checkbox);
+    }
+
     const infoWrapper = document.createElement("div");
     infoWrapper.style.display = "flex";
     infoWrapper.style.alignItems = "center";
     infoWrapper.style.gap = "10px";
     infoWrapper.style.minWidth = "0";
+    infoWrapper.style.flex = "1 1 auto";
 
     if (mod.thumbnailUrl) {
       const thumb = document.createElement("img");
@@ -4074,13 +4104,26 @@
     nameEl.style.whiteSpace = "nowrap";
     infoWrapper.appendChild(nameEl);
 
-    row.appendChild(infoWrapper);
+    leftWrapper.appendChild(infoWrapper);
+    row.appendChild(leftWrapper);
 
     const actions = document.createElement("div");
     actions.style.display = "flex";
     actions.style.alignItems = "center";
     actions.style.gap = "8px";
     actions.style.flex = "0 0 auto";
+
+    if (onExport) {
+      const exportButton = document.createElement("button");
+      exportButton.type = "button";
+      exportButton.className = "mod-rename-button";
+      exportButton.textContent = "Export";
+      exportButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onExport(mod);
+      });
+      actions.appendChild(exportButton);
+    }
 
     if (onAddImage) {
       const addImageButton = document.createElement("button");
@@ -4284,6 +4327,217 @@
     input.click();
   }
 
+  function ensureManageExportToolbar(container, listContainer, type) {
+    if (!container || !listContainer) return;
+    const existing = container.querySelector(".rose-manage-export-toolbar");
+    if (existing) existing.remove();
+
+    const toolbar = document.createElement("div");
+    toolbar.className = "rose-manage-export-toolbar";
+    toolbar.style.display = "flex";
+    toolbar.style.alignItems = "center";
+    toolbar.style.gap = "12px";
+    toolbar.style.marginBottom = "12px";
+    toolbar.style.padding = "8px 12px";
+    toolbar.style.background = "rgba(200, 170, 110, 0.08)";
+    toolbar.style.border = "1px solid rgba(200, 170, 110, 0.4)";
+    toolbar.style.borderRadius = "4px";
+    toolbar.style.fontFamily = '"Beaufort for LOL", serif';
+    toolbar.style.color = "#cdbe91";
+
+    if (window.__roseManageExportFormat == null) window.__roseManageExportFormat = "fantome";
+
+    const selectAllLabel = document.createElement("label");
+    selectAllLabel.style.display = "flex";
+    selectAllLabel.style.alignItems = "center";
+    selectAllLabel.style.gap = "6px";
+    selectAllLabel.style.cursor = "pointer";
+    selectAllLabel.style.flex = "0 0 auto";
+
+    const selectAll = document.createElement("input");
+    selectAll.type = "checkbox";
+    selectAll.className = "mod-select-checkbox-export-all";
+    selectAll.style.width = "16px";
+    selectAll.style.height = "16px";
+    selectAll.style.accentColor = "#c8aa6e";
+    selectAll.addEventListener("change", () => {
+      const set = type === "skins"
+        ? (window.__roseManageSkinSelection || new Set())
+        : (window.__roseManageCategorySelection || new Set());
+      const allChecked = selectAll.checked;
+      set.clear();
+      (container.querySelectorAll(".mod-select-checkbox") || []).forEach((cb) => {
+        cb.checked = allChecked;
+        if (allChecked && cb.__mod) set.add(cb.__mod);
+      });
+      updateManageExportToolbar();
+    });
+    selectAllLabel.appendChild(selectAll);
+    selectAllLabel.appendChild(document.createTextNode("Select all"));
+    toolbar.appendChild(selectAllLabel);
+
+    const countLabel = document.createElement("span");
+    countLabel.className = "rose-manage-export-count";
+    countLabel.textContent = "0 selected";
+    countLabel.style.flex = "1 1 auto";
+    toolbar.appendChild(countLabel);
+
+    const formatGroup = document.createElement("div");
+    formatGroup.style.display = "flex";
+    formatGroup.style.alignItems = "center";
+    formatGroup.style.gap = "6px";
+    formatGroup.style.flex = "0 0 auto";
+
+    const formatLabel = document.createElement("span");
+    formatLabel.textContent = "Format:";
+    formatGroup.appendChild(formatLabel);
+
+    const fmtFantome = document.createElement("button");
+    fmtFantome.type = "button";
+    fmtFantome.textContent = ".fantome";
+    fmtFantome.className = "mod-rename-button";
+    const fmtZip = document.createElement("button");
+    fmtZip.type = "button";
+    fmtZip.textContent = ".zip";
+    fmtZip.className = "mod-rename-button";
+    const applyFormatStyle = () => {
+      const cur = window.__roseManageExportFormat;
+      fmtFantome.style.opacity = cur === "fantome" ? "1" : "0.4";
+      fmtZip.style.opacity = cur === "zip" ? "1" : "0.4";
+    };
+    fmtFantome.addEventListener("click", (e) => {
+      e.stopPropagation();
+      window.__roseManageExportFormat = "fantome";
+      applyFormatStyle();
+    });
+    fmtZip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      window.__roseManageExportFormat = "zip";
+      applyFormatStyle();
+    });
+    applyFormatStyle();
+    formatGroup.appendChild(fmtFantome);
+    formatGroup.appendChild(fmtZip);
+    toolbar.appendChild(formatGroup);
+
+    const exportSelected = document.createElement("button");
+    exportSelected.type = "button";
+    exportSelected.textContent = "Export Selected";
+    exportSelected.className = "mod-rename-button";
+    exportSelected.addEventListener("click", (e) => {
+      e.stopPropagation();
+      exportSelectedMods(type);
+    });
+    toolbar.appendChild(exportSelected);
+
+    (listContainer.parentNode || container).insertBefore(toolbar, listContainer);
+  }
+
+  function getManageSelectionSet(type) {
+    return type === "skins"
+      ? (window.__roseManageSkinSelection || (window.__roseManageSkinSelection = new Set()))
+      : (window.__roseManageCategorySelection || (window.__roseManageCategorySelection = new Set()));
+  }
+
+  function toggleManageModSelection(type, mod, checked) {
+    const set = getManageSelectionSet(type);
+    const key = type === "skins" ? (mod.relativePath || mod.modName) : mod.name;
+    if (checked) {
+      set.add(mod);
+    } else {
+      for (const m of Array.from(set)) {
+        const mkey = type === "skins" ? (m.relativePath || m.modName) : m.name;
+        if (mkey === key) set.delete(m);
+      }
+    }
+    updateManageExportToolbar();
+  }
+
+  function updateManageExportToolbar() {
+    const toolbars = document.querySelectorAll(".rose-manage-export-toolbar");
+    toolbars.forEach((toolbar) => {
+      const countEl = toolbar.querySelector(".rose-manage-export-count");
+      if (!countEl) return;
+      const isSkin = Boolean(document.getElementById("champion-mods-manage-dialog"));
+      const set = isSkin
+        ? (window.__roseManageSkinSelection || new Set())
+        : (window.__roseManageCategorySelection || new Set());
+      countEl.textContent = `${set.size} selected`;
+    });
+  }
+
+  function buildExportRequest(type, mods) {
+    const format = window.__roseManageExportFormat || "fantome";
+    if (type === "skins") {
+      return {
+        type: "export-skin-mods",
+        championId: window.__roseManageChampionId,
+        mods: mods.map((m) => ({ modName: m.modName, relativePath: m.relativePath })),
+        format,
+      };
+    }
+    return {
+      type: "export-category-mods",
+      category: window.__roseManageCategory,
+      mods: mods.map((m) => m.name),
+      format,
+    };
+  }
+
+  function exportSingleMod(type, mod) {
+    if (!bridge) return;
+    if (type === "skins" && !mod.modName) return;
+    if (type === "category" && !mod.name) return;
+    bridge.send(buildExportRequest(type, [mod]));
+  }
+
+  function exportSelectedMods(type) {
+    if (!bridge) return;
+    const set = getManageSelectionSet(type);
+    const mods = Array.from(set);
+    if (mods.length === 0) {
+      showManageModsToast("Select at least one mod to export", true);
+      return;
+    }
+    bridge.send(buildExportRequest(type, mods));
+  }
+
+  function handleSkinModsExported(payload) {
+    if (!payload) return;
+    if (payload.error && payload.cancelled) {
+      log("info", "Mod export cancelled");
+      return;
+    }
+    const exported = Number(payload.exportedCount) || 0;
+    const failed = Number(payload.failedCount) || 0;
+    if (payload.success && exported > 0) {
+      showManageModsToast(`Exported ${exported} mod${exported === 1 ? "" : "s"}`, false);
+      log("info", `Exported ${exported} skin mod(s) to ${payload.destFolder || ""}`);
+    } else {
+      showManageModsToast(payload.error || "Export failed", true);
+      log("error", `Skin mod export failed: ${payload.error || "unknown error"}`);
+    }
+    if (failed > 0) log("error", `${failed} skin mod(s) failed to export`);
+  }
+
+  function handleCategoryModsExported(payload) {
+    if (!payload) return;
+    if (payload.error && payload.cancelled) {
+      log("info", "Mod export cancelled");
+      return;
+    }
+    const exported = Number(payload.exportedCount) || 0;
+    const failed = Number(payload.failedCount) || 0;
+    if (payload.success && exported > 0) {
+      showManageModsToast(`Exported ${exported} mod${exported === 1 ? "" : "s"}`, false);
+      log("info", `Exported ${exported} ${payload.category || ""} mod(s) to ${payload.destFolder || ""}`);
+    } else {
+      showManageModsToast(payload.error || "Export failed", true);
+      log("error", `Category mod export failed: ${payload.error || "unknown error"}`);
+    }
+    if (failed > 0) log("error", `${failed} ${payload.category || ""} mod(s) failed to export`);
+  }
+
   function handleManageSkinModsResponse(payload) {
     if (Number(payload.championId) !== Number(window.__roseManageChampionId)) return;
 
@@ -4300,8 +4554,14 @@
 
     listContainer.innerHTML = "";
     const mods = payload.mods || [];
+
+    // Keep track of mods selected for bulk export.
+    window.__roseManageSkinSelection = new Set();
+
+    ensureManageExportToolbar(listContainer.parentElement || dialog, listContainer, "skins");
     if (mods.length === 0) {
       listContainer.innerHTML = `<div style="color: #cdbe91; text-align: center; padding: 20px; font-family: 'Beaufort for LOL', serif;">No custom mods installed for this champion.</div>`;
+      updateManageExportToolbar();
       return;
     }
 
@@ -4310,6 +4570,7 @@
       const dedupeKey = mod.relativePath || mod.modName;
       if (seen.has(dedupeKey)) return;
       seen.add(dedupeKey);
+
       renderModRow(
         listContainer,
         { name: mod.modName, displayName: mod.displayName, thumbnailUrl: mod.thumbnailUrl, modName: mod.modName, relativePath: mod.relativePath },
@@ -4334,20 +4595,55 @@
             newName: newName,
           });
         },
-        (modEntry) => addModImage(modEntry)
+        (modEntry) => addModImage(modEntry),
+        (modEntry) => exportSingleMod("skins", modEntry),
+        (modEntry, checked) => toggleManageModSelection("skins", modEntry, checked)
       );
     });
+    updateManageExportToolbar();
   }
 
   function handleModImageSet(payload) {
     if (!payload || !payload.success) {
       log("error", "Failed to set mod image: " + (payload?.error || "unknown error"));
+      showManageModsToast((payload?.error || "Failed to set mod image"), true);
       return;
     }
+    showManageModsToast("Image saved", false);
     const championId = payload.championId;
     if (championId && Number(championId) === Number(window.__roseManageChampionId)) {
       openChampionModsList(Number(championId));
     }
+  }
+
+  function showManageModsToast(message, isError) {
+    const dialog = document.getElementById("champion-mods-manage-dialog");
+    const listContainer = document.getElementById("champion-mods-manage-dialog-list");
+    const container = listContainer && listContainer.parentElement ? listContainer.parentElement : dialog;
+    if (!container) return;
+    const existing = container.querySelector(".rose-manage-mod-toast");
+    if (existing) existing.remove();
+    const toast = document.createElement("div");
+    toast.className = "rose-manage-mod-toast";
+    toast.textContent = message;
+    toast.style.cssText = [
+      "position: absolute",
+      "top: 8px",
+      "left: 50%",
+      "transform: translateX(-50%)",
+      "z-index: 999",
+      "padding: 8px 16px",
+      "border-radius: 3px",
+      "font-family: 'Beaufort for LOL', serif",
+      "font-size: 14px",
+      "color: #0a1428",
+      "background: " + (isError ? "#c9453c" : "#7fb069"),
+      "box-shadow: 0 4px 12px rgba(0,0,0,0.4)",
+      "pointer-events: none",
+    ].join(";");
+    container.style.position = container.style.position || "relative";
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
   }
 
   function handleChampionModDeleted(payload) {
@@ -4402,15 +4698,20 @@
 
     listContainer.innerHTML = "";
     const mods = payload.mods || [];
+
+    window.__roseManageCategorySelection = new Set();
+    ensureManageExportToolbar(listContainer.parentElement || document, listContainer, "category");
+
     if (mods.length === 0) {
       listContainer.innerHTML = `<div style="color: #cdbe91; text-align: center; padding: 20px; font-family: 'Beaufort for LOL', serif;">No custom mods installed in this category.</div>`;
+      updateManageExportToolbar();
       return;
     }
 
     mods.forEach((mod) => {
       renderModRow(
         listContainer,
-        { name: mod.name, displayName: mod.displayName },
+        { name: mod.name, displayName: mod.displayName, category: window.__roseManageCategory },
         (deleteButton) => {
           deleteButton.disabled = true;
           deleteButton.textContent = "Deleting...";
@@ -4429,9 +4730,13 @@
             modName: mod.name,
             newName: newName,
           });
-        }
+        },
+        null,
+        (modEntry) => exportSingleMod("category", modEntry),
+        (modEntry, checked) => toggleManageModSelection("category", modEntry, checked)
       );
     });
+    updateManageExportToolbar();
   }
 
   function handleCategoryModDeleted(payload) {
@@ -4691,6 +4996,27 @@
   function handleFolderOpenedResponse(payload) {
     if (payload.cancelled) {
       log("info", "Mod import cancelled");
+    } else if (payload.importedCount != null) {
+      // Multi-file (bulk) import response.
+      const imported = Number(payload.importedCount) || 0;
+      const failed = Number(payload.failedCount) || 0;
+      const modsList = Array.isArray(payload.mods) ? payload.mods : [];
+      const importedNames = modsList
+        .filter((m) => m && m.success && m.modName)
+        .map((m) => m.modName)
+        .join(", ");
+      if (imported > 0) {
+        log(
+          "info",
+          `Imported ${imported} mod(s)${importedNames ? ": " + importedNames : ""}`
+        );
+      }
+      if (failed > 0) {
+        log("error", payload.error || `${failed} mod(s) failed to import`);
+      }
+      if (imported === 0) {
+        log("error", payload.error || "No mods were imported");
+      }
     } else if (payload.error) {
       log("error", `Failed to import mod: ${escapeHtml(payload.error)}`);
       // Could show an error message to user here
@@ -5264,12 +5590,18 @@
       bridge.subscribe("champion-mod-renamed", handleChampionModRenamed);
       bridge.subscribe("category-mod-renamed", handleCategoryModRenamed);
       bridge.subscribe("mod-image-set", handleModImageSet);
+      bridge.subscribe("skin-mods-exported", handleSkinModsExported);
+      bridge.subscribe("category-mods-exported", handleCategoryModsExported);
+      bridge.subscribe("manage-favorites-data", handleManageFavoritesData);
 
       // On every (re)connect, sync state
       bridge.onReady(() => {
         requestSettings();
         requestDiagnostics();
         startBadgeObserver();
+
+        // Load persisted manage-list favorites (survive League/Rose restarts).
+        if (bridge) bridge.send({ type: "manage-favorites-get" });
 
         // Poll diagnostics so warnings appear without opening the panel.
         if (!_diagnosticsPollId) {

@@ -10,6 +10,11 @@ import logging
 import threading
 from typing import Optional, Set, Callable
 from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
+
+try:
+    from websockets.exceptions import PayloadTooBig
+except ImportError:  # older websockets < 10 exposes PayloadTooBigError
+    from websockets.exceptions import PayloadTooBigError as PayloadTooBig
 from websockets.server import WebSocketServerProtocol, serve
 from utils.core.security import is_loopback_origin
 
@@ -49,6 +54,9 @@ class WebSocketServer:
         self._connections: Set[WebSocketServerProtocol] = set()
         self._stop_event = threading.Event()
         self.ready_event = threading.Event()
+        # Generous limit so large base64 mod images are not dropped by the
+        # websockets default (1 MiB). 64 MiB is plenty for a full-resolution PNG.
+        self.max_message_size = 64 * 1024 * 1024
     
     def run(self) -> None:
         """Run the WebSocket server in an event loop"""
@@ -67,6 +75,7 @@ class WebSocketServer:
                     # The plugin can reconnect, but we prefer to avoid reconnects in the first place.
                     ping_interval=20,
                     ping_timeout=20,
+                    max_size=self.max_message_size,
                     process_request=self._process_http_request if self.http_handler else None
                 )
             )
@@ -131,6 +140,12 @@ class WebSocketServer:
                     self.message_handler(message)
         except (ConnectionClosedError, ConnectionClosedOK):
             log.debug("[SkinMonitor] Client disconnected: %s", client)
+        except PayloadTooBig:
+            log.warning(
+                "[SkinMonitor] Dropped oversized message from %s (exceeds %s bytes)",
+                client,
+                self.max_message_size,
+            )
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "[SkinMonitor] Error handling client %s: %s", client, exc

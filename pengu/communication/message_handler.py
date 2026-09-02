@@ -22,6 +22,11 @@ from config import get_config_float, get_config_option, set_config_option
 from injection.mods.storage import ModStorageService
 from utils.core.paths import get_user_data_dir, get_asset_path, get_injection_dir, open_folder_in_explorer
 from utils.core.issue_reporter import clear_issues, read_issues_tail
+from utils.core.custom_skin_favorites import (
+    to_dict as get_custom_skin_favorites_dict,
+    toggle_champion_favorite as toggle_custom_skin_champion_favorite,
+    toggle_skin_favorite as toggle_custom_skin_favorite,
+)
 from utils.core.junction import is_junction, safe_remove_entry, link_or_extract
 from utils.core.utilities import get_base_skin_id_for_chroma
 from utils.system.admin_utils import (
@@ -81,6 +86,71 @@ def _choose_mod_file() -> Optional[Path]:
         return Path(selected) if selected else None
     except Exception as exc:  # noqa: BLE001
         log.error("[SkinMonitor] Could not open the mod file picker: %s", exc)
+        return None
+    finally:
+        if root is not None:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+
+def _choose_mod_files() -> list[Path]:
+    """Show a native multi-select file picker for mod archives."""
+    root = None
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+        except Exception:
+            pass
+        selected = filedialog.askopenfilenames(
+            title="Select Rose mod file(s)",
+            filetypes=[
+                ("Rose mods", "*.fantome *.zip"),
+                ("Fantome mods", "*.fantome"),
+                ("ZIP mods", "*.zip"),
+                ("All files", "*.*"),
+            ],
+        )
+        return [Path(item) for item in selected] if selected else []
+    except Exception as exc:  # noqa: BLE001
+        log.error("[SkinMonitor] Could not open the mod file picker: %s", exc)
+        return []
+    finally:
+        if root is not None:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+
+def _choose_export_folder() -> Optional[str]:
+    """Show a native folder picker for the export destination.
+
+    Returns the selected folder as a string, or None if cancelled/failed.
+    """
+    root = None
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+        except Exception:
+            pass
+        selected = filedialog.askdirectory(
+            title="Choose a folder to export mod archives to",
+        )
+        return selected if selected else None
+    except Exception as exc:  # noqa: BLE001
+        log.error("[SkinMonitor] Could not open the export folder picker: %s", exc)
         return None
     finally:
         if root is not None:
@@ -181,6 +251,12 @@ class MessageHandler:
             self._handle_favorite_toggle_chroma(payload)
         elif payload_type == "request-favorites":
             self._handle_request_favorites(payload)
+        elif payload_type == "manage-favorites-get":
+            self._handle_manage_favorites_get(payload)
+        elif payload_type == "manage-favorite-champion-toggle":
+            self._handle_manage_favorite_champion_toggle(payload)
+        elif payload_type == "manage-favorite-skin-toggle":
+            self._handle_manage_favorite_skin_toggle(payload)
         elif payload_type == "settings-request":
             self._handle_settings_request(payload)
         elif payload_type == "path-validate":
@@ -250,6 +326,10 @@ class MessageHandler:
             self._handle_rename_category_mod(payload)
         elif payload_type == "set-mod-image":
             self._handle_set_mod_image(payload)
+        elif payload_type == "export-skin-mods":
+            self._handle_export_skin_mods(payload)
+        elif payload_type == "export-category-mods":
+            self._handle_export_category_mods(payload)
         elif payload_type == "dismiss-historic":
             self._handle_dismiss_historic(payload)
         # Party mode messages
@@ -457,7 +537,56 @@ class MessageHandler:
                 self.broadcaster.broadcast_favorites_state()
         except Exception as e:
             log.error(f"[SkinMonitor] Failed to handle request-favorites: {e}")
-    
+
+    def _handle_manage_favorites_get(self, payload: dict) -> None:
+        """Return the persisted manage-list favorites (champions + skins) to JavaScript."""
+        try:
+            response_payload = {
+                "type": "manage-favorites-data",
+                "favorites": get_custom_skin_favorites_dict(),
+            }
+            self._send_response(json.dumps(response_payload))
+        except Exception as e:
+            log.error(f"[SkinMonitor] Failed to handle manage-favorites-get: {e}")
+            response_payload = {
+                "type": "manage-favorites-data",
+                "favorites": {"version": 1, "favoriteChampions": [], "favoriteSkins": {}},
+            }
+            self._send_response(json.dumps(response_payload))
+
+    def _handle_manage_favorite_champion_toggle(self, payload: dict) -> None:
+        """Toggle favorite status for a champion in the manage list."""
+        try:
+            champion_id = payload.get("championId")
+            if champion_id is None:
+                log.warning("[SkinMonitor] Invalid manage-favorite-champion-toggle payload: %s", payload)
+                return
+            toggle_custom_skin_champion_favorite(int(champion_id))
+            response_payload = {
+                "type": "manage-favorites-data",
+                "favorites": get_custom_skin_favorites_dict(),
+            }
+            self._send_response(json.dumps(response_payload))
+        except Exception as e:
+            log.error(f"[SkinMonitor] Failed to handle manage-favorite-champion-toggle: {e}")
+
+    def _handle_manage_favorite_skin_toggle(self, payload: dict) -> None:
+        """Toggle favorite status for a skin (for a champion) in the manage list."""
+        try:
+            champion_id = payload.get("championId")
+            skin_id = payload.get("skinId")
+            if champion_id is None or skin_id is None:
+                log.warning("[SkinMonitor] Invalid manage-favorite-skin-toggle payload: %s", payload)
+                return
+            toggle_custom_skin_favorite(int(champion_id), int(skin_id))
+            response_payload = {
+                "type": "manage-favorites-data",
+                "favorites": get_custom_skin_favorites_dict(),
+            }
+            self._send_response(json.dumps(response_payload))
+        except Exception as e:
+            log.error(f"[SkinMonitor] Failed to handle manage-favorite-skin-toggle: {e}")
+
     def _handle_settings_request(self, payload: dict) -> None:
         """Handle settings request"""
         try:
@@ -924,7 +1053,14 @@ class MessageHandler:
                             thumbnail_path.relative_to(self.mod_storage.mods_root)
                         ).replace("\\", "/")
                         quoted_path = quote(thumbnail_relative_path, safe="/")
-                        thumbnail_url = f"http://127.0.0.1:{self.port}/mod-asset/{quoted_path}"
+                        try:
+                            version_token = thumbnail_path.stat().st_mtime_ns
+                        except OSError:
+                            version_token = 0
+                        thumbnail_url = (
+                            f"http://127.0.0.1:{self.port}/mod-asset/{quoted_path}"
+                            f"?v={version_token}"
+                        )
             except Exception:
                 pass
 
@@ -1021,7 +1157,14 @@ class MessageHandler:
                             thumbnail_path.relative_to(self.mod_storage.mods_root)
                         ).replace("\\", "/")
                         quoted_path = quote(thumbnail_relative_path, safe="/")
-                        thumbnail_url = f"http://127.0.0.1:{self.port}/mod-asset/{quoted_path}"
+                        try:
+                            version_token = thumbnail_path.stat().st_mtime_ns
+                        except OSError:
+                            version_token = 0
+                        thumbnail_url = (
+                            f"http://127.0.0.1:{self.port}/mod-asset/{quoted_path}"
+                            f"?v={version_token}"
+                        )
             except Exception:
                 pass
             mods_payload.append(
@@ -2034,6 +2177,176 @@ class MessageHandler:
                 "error": str(exc),
             }))
 
+    def _handle_export_skin_mods(self, payload: dict) -> None:
+        """Export one or more champion skin mods as .fantome/.zip archives.
+
+        Payload: ``{ "championId": int, "mods": [{ "modName", "relativePath" }...],
+        "format": "fantome"|"zip" }``
+        """
+        if not self.mod_storage:
+            self._send_response(json.dumps({
+                "type": "skin-mods-exported",
+                "success": False,
+                "error": "Mod storage is not available",
+            }))
+            return
+        champion_id = payload.get("championId")
+        fmt = str(payload.get("format") or "fantome").lower()
+        if fmt not in {"fantome", "zip"}:
+            fmt = "fantome"
+        try:
+            entries = self.mod_storage.list_mods_for_champion(champion_id)
+        except Exception as exc:
+            log.error("[Export] Failed to list champion mods: %s", exc)
+            entries = []
+
+        requested = payload.get("mods") or []
+        matched = []
+        for req in requested or ():
+            mod_name = req.get("modName") if isinstance(req, dict) else None
+            relative_path = req.get("relativePath") if isinstance(req, dict) else None
+            norm_rel = str(relative_path).replace("\\", "/") if relative_path else None
+            entry = None
+            for candidate in entries:
+                try:
+                    entry_rel = candidate.path.relative_to(
+                        self.mod_storage.mods_root
+                    ).as_posix()
+                except Exception:
+                    entry_rel = str(candidate.path).replace("\\", "/")
+                if norm_rel and entry_rel == norm_rel:
+                    entry = candidate
+                    break
+                if mod_name and candidate.mod_name == mod_name:
+                    entry = candidate
+                    break
+            if entry is not None:
+                matched.append(entry)
+
+        if not matched:
+            self._send_response(json.dumps({
+                "type": "skin-mods-exported",
+                "success": False,
+                "error": "No matching mods were found to export",
+            }))
+            return
+
+        dest_folder = _choose_export_folder()
+        if dest_folder is None:
+            self._send_response(json.dumps({
+                "type": "skin-mods-exported",
+                "success": False,
+                "cancelled": True,
+                "error": "Export cancelled",
+            }))
+            return
+
+        results = self.mod_storage.export_champion_mods(matched, dest_folder, fmt)
+        exported = [r for r in results if r.get("success")]
+        failed = [r for r in results if not r.get("success")]
+        log.info(
+            f"[Export] Exported {len(exported)} champion mod(s) to {dest_folder}; "
+            f"{len(failed)} failed"
+        )
+        if exported:
+            try:
+                open_folder_in_explorer(dest_folder)
+            except Exception as exc:
+                log.debug("[Export] Could not open export folder: %s", exc)
+        response_payload = {
+            "type": "skin-mods-exported",
+            "success": bool(exported),
+            "championId": champion_id,
+            "format": fmt,
+            "destFolder": dest_folder,
+            "mods": results,
+            "exportedCount": len(exported),
+            "failedCount": len(failed),
+        }
+        if failed:
+            response_payload["error"] = (
+                f"{len(failed)} file(s) failed to export. "
+                + "; ".join(f"{r.get('name')}: {r.get('error')}" for r in failed)
+            )
+        self._send_response(json.dumps(response_payload))
+
+    def _handle_export_category_mods(self, payload: dict) -> None:
+        """Export one or more category mods as .fantome/.zip archives.
+
+        Payload: ``{ "category": str, "mods": ["name1", "name2"...],
+        "format": "fantome"|"zip" }``
+        """
+        if not self.mod_storage:
+            self._send_response(json.dumps({
+                "type": "category-mods-exported",
+                "success": False,
+                "error": "Mod storage is not available",
+            }))
+            return
+        category = payload.get("category")
+        fmt = str(payload.get("format") or "fantome").lower()
+        if fmt not in {"fantome", "zip"}:
+            fmt = "fantome"
+        if category not in self.mod_storage.MOD_CATEGORIES:
+            self._send_response(json.dumps({
+                "type": "category-mods-exported",
+                "success": False,
+                "category": category,
+                "error": f"Unsupported category: {category}",
+            }))
+            return
+
+        requested = payload.get("mods") or [payload.get("modName")]
+        names = [str(name) for name in requested if name]
+        if not names:
+            self._send_response(json.dumps({
+                "type": "category-mods-exported",
+                "success": False,
+                "category": category,
+                "error": "No mods were requested to export",
+            }))
+            return
+
+        dest_folder = _choose_export_folder()
+        if dest_folder is None:
+            self._send_response(json.dumps({
+                "type": "category-mods-exported",
+                "success": False,
+                "cancelled": True,
+                "category": category,
+                "error": "Export cancelled",
+            }))
+            return
+
+        results = self.mod_storage.export_category_mods(category, names, dest_folder, fmt)
+        exported = [r for r in results if r.get("success")]
+        failed = [r for r in results if not r.get("success")]
+        log.info(
+            f"[Export] Exported {len(exported)} {category} mod(s) to {dest_folder}; "
+            f"{len(failed)} failed"
+        )
+        if exported:
+            try:
+                open_folder_in_explorer(dest_folder)
+            except Exception as exc:
+                log.debug("[Export] Could not open export folder: %s", exc)
+        response_payload = {
+            "type": "category-mods-exported",
+            "success": bool(exported),
+            "category": category,
+            "format": fmt,
+            "destFolder": dest_folder,
+            "mods": results,
+            "exportedCount": len(exported),
+            "failedCount": len(failed),
+        }
+        if failed:
+            response_payload["error"] = (
+                f"{len(failed)} file(s) failed to export. "
+                + "; ".join(f"{r.get('name')}: {r.get('error')}" for r in failed)
+            )
+        self._send_response(json.dumps(response_payload))
+
     def _handle_dismiss_historic(self, payload: dict) -> None:
         """Dismiss historic mode (close-button on popup)"""
         try:
@@ -2794,15 +3107,15 @@ class MessageHandler:
             log.debug(f"[SkinMonitor] Error during folder cleanup: {e}")
     
     def _handle_add_custom_mods_category_selected(self, payload: dict) -> None:
-        """Open a file picker and import one mod into the selected category."""
+        """Open a file picker and import mod(s) into the selected category."""
         category = payload.get("category")
         try:
             if category not in self.mod_storage.MOD_CATEGORIES:
                 log.warning(f"[SkinMonitor] Invalid category: {category}")
                 return
 
-            selected_mod_file = _choose_mod_file()
-            if selected_mod_file is None:
+            selected_mod_files = _choose_mod_files()
+            if not selected_mod_files:
                 self._send_response(json.dumps({
                     "type": "folder-opened-response",
                     "success": False,
@@ -2811,21 +3124,38 @@ class MessageHandler:
                 }))
                 return
 
-            mod_folder, mod_name = self.mod_storage.import_category_mod_file(
+            results = self.mod_storage.import_category_mod_files(
                 category,
-                selected_mod_file,
+                selected_mod_files,
             )
+            imported = [r for r in results if r.get("success")]
+            failed = [r for r in results if not r.get("success")]
             log.info(
-                f"[SkinMonitor] Imported {category} mod {mod_name} to {mod_folder}"
+                f"[SkinMonitor] Imported {len(imported)} {category} mod(s), "
+                f"{len(failed)} failed"
             )
-            
+
             response_payload = {
                 "type": "folder-opened-response",
-                "success": True,
+                "success": bool(imported),
                 "category": category,
-                "path": str(mod_folder),
-                "modName": mod_name,
+                "mods": results,
+                "importedCount": len(imported),
+                "failedCount": len(failed),
             }
+            if len(imported) == 1:
+                response_payload["path"] = str(imported[0].get("path") or "")
+                response_payload["modName"] = imported[0].get("modName")
+            elif imported:
+                response_payload["path"] = str(imported[0].get("path") or "")
+                response_payload["modName"] = imported[0].get("modName")
+            if failed:
+                response_payload["error"] = (
+                    f"{len(failed)} file(s) failed to import. "
+                    + "; ".join(
+                        f"{r.get('source')}: {r.get('error')}" for r in failed
+                    )
+                )
             self._send_response(json.dumps(response_payload))
         except Exception as e:
             log.error(f"[SkinMonitor] Failed to import {category} mod: {e}")
@@ -3107,8 +3437,8 @@ class MessageHandler:
                     self._send_response(json.dumps(response_payload))
                     return
 
-                selected_mod_file = _choose_mod_file()
-                if selected_mod_file is None:
+                selected_mod_files = _choose_mod_files()
+                if not selected_mod_files:
                     self._send_response(json.dumps({
                         "type": "folder-opened-response",
                         "success": False,
@@ -3117,26 +3447,42 @@ class MessageHandler:
                     }))
                     return
 
-                mod_folder, target_manifest, mod_name = self.mod_storage.import_mod_file(
+                results = self.mod_storage.import_mod_files(
                     champion_id,
-                    selected_mod_file,
+                    selected_mod_files,
                     skin_ids,
                 )
-                
+                imported = [r for r in results if r.get("success")]
+                failed = [r for r in results if not r.get("success")]
                 log.info(
-                    f"[SkinMonitor] Imported mod for champion "
-                    f"{champion_id}, mod {mod_name}, targets {skin_ids}"
+                    f"[SkinMonitor] Imported {len(imported)} mod(s) for champion "
+                    f"{champion_id}, targets {skin_ids}; {len(failed)} failed"
                 )
-                
+
+                champion_folder = str(
+                    self.mod_storage.get_champion_dir(champion_id)
+                )
                 response_payload = {
                     "type": "folder-opened-response",
-                    "success": True,
-                    "path": str(mod_folder),
-                    "championFolder": str(self.mod_storage.get_champion_dir(champion_id)),
-                    "modName": mod_name,
+                    "success": bool(imported),
+                    "championFolder": champion_folder,
+                    "mods": results,
+                    "importedCount": len(imported),
+                    "failedCount": len(failed),
                     "skinIds": skin_ids,
-                    "targetManifest": str(target_manifest),
                 }
+                if imported:
+                    response_payload["path"] = str(
+                        imported[0].get("path") or champion_folder
+                    )
+                    response_payload["modName"] = imported[0].get("modName")
+                if failed:
+                    response_payload["error"] = (
+                        f"{len(failed)} file(s) failed to import. "
+                        + "; ".join(
+                            f"{r.get('source')}: {r.get('error')}" for r in failed
+                        )
+                    )
                 self._send_response(json.dumps(response_payload))
         except Exception as e:
             log.error(f"[SkinMonitor] Failed to handle skin selection: {e}")

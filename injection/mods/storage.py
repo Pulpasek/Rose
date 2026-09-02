@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import base64
 import hashlib
 import json
+import re
 import shutil
 import tempfile
 import threading
@@ -601,31 +602,79 @@ class ModStorageService:
 
         with self._storage_lock:
             champion_dir = self.get_champion_dir(champion_id_int)
+            search_dirs = self._champion_mod_search_dirs(champion_id_int, champion_dir)
             candidate = None
+
             if relative_path and not self._is_unsafe_mod_identity(relative_path):
-                candidate = self._resolve_mod_path(champion_dir, relative_path)
+                candidate = self._resolve_mod_path(self.mods_root, relative_path)
+                if candidate is not None and not self._belongs_to_any(candidate, search_dirs):
+                    candidate = None
+
             if candidate is None:
-                candidate = next(
-                    (
-                        entry for entry in champion_dir.iterdir()
-                        if entry.is_dir() and entry.name == mod_name
-                    ),
-                    None,
-                )
+                for base_dir in search_dirs:
+                    try:
+                        match = next(
+                            (
+                                entry for entry in base_dir.iterdir()
+                                if entry.is_dir() and entry.name == mod_name
+                            ),
+                            None,
+                        )
+                    except OSError:
+                        match = None
+                    if match is not None:
+                        candidate = match
+                        break
+
             if candidate is None:
-                candidate = champion_dir / mod_name
-                if not candidate.exists():
-                    raise ValueError("Mod not found")
+                for base_dir in search_dirs:
+                    candidate = base_dir / mod_name
+                    if candidate.is_dir():
+                        break
+                    candidate = None
+
+            if candidate is None or not candidate.is_dir():
+                raise ValueError("Mod not found")
 
             meta_dir = candidate / "META"
             meta_dir.mkdir(parents=True, exist_ok=True)
-            image_file = meta_dir / "image.png"
             if mime_type.lower() not in {"image/png", "image/jpeg", "image/jpg"}:
                 raise ValueError("Only PNG/JPG images are supported")
-            if mime_type.lower().endswith("jpg"):
-                image_file = meta_dir / "image.jpg"
+            image_file = meta_dir / "image.png"
             image_file.write_bytes(payload)
             return str(image_file.relative_to(self.mods_root)).replace("\\", "/")
+
+    def _champion_mod_search_dirs(
+        self, champion_id_int: int, champion_dir: Path
+    ) -> List[Path]:
+        """Return the primary + legacy per-skin dirs belonging to a champion."""
+        search_dirs = [champion_dir]
+        try:
+            legacy_directories = sorted(self.skins_dir.iterdir(), key=lambda p: p.name.lower())
+        except OSError:
+            legacy_directories = []
+        for child in legacy_directories:
+            if not child.is_dir() or child == champion_dir:
+                continue
+            legacy_skin_id = self._to_int(child.name)
+            if legacy_skin_id is None or get_champion_id_from_skin_id(legacy_skin_id) != champion_id_int:
+                continue
+            search_dirs.append(child)
+        return search_dirs
+
+    def _belongs_to_any(self, candidate: Path, search_dirs: List[Path]) -> bool:
+        try:
+            candidate_resolved = candidate.resolve()
+        except OSError:
+            return False
+        for base_dir in search_dirs:
+            try:
+                base_resolved = base_dir.resolve()
+            except OSError:
+                continue
+            if base_resolved == candidate_resolved or base_resolved in candidate_resolved.parents:
+                return True
+        return False
 
     def import_mod_file(
         self,
@@ -677,6 +726,45 @@ class ModStorageService:
         except Exception:
             safe_remove_entry(temporary_dir)
             raise
+
+    def import_mod_files(
+        self,
+        champion_id: int | str,
+        source_paths: object,
+        skin_ids: object,
+    ) -> list[dict]:
+        """Extract several user-selected mod archives into a champion folder.
+
+        Each archive is imported independently; a failure on one file does not
+        abort the others. Returns a list of per-file results:
+
+        ``{"source": str, "modName": str|None, "path": str|None, "success": bool, "error": str|None}``
+        """
+        results = []
+        for source in source_paths or ():
+            source_path = str(source)
+            try:
+                target_dir, _manifest_path, mod_name = self.import_mod_file(
+                    champion_id,
+                    source_path,
+                    skin_ids,
+                )
+                results.append({
+                    "source": source_path,
+                    "modName": mod_name,
+                    "path": str(target_dir),
+                    "success": True,
+                    "error": None,
+                })
+            except Exception as exc:  # noqa: BLE001
+                results.append({
+                    "source": source_path,
+                    "modName": None,
+                    "path": None,
+                    "success": False,
+                    "error": str(exc),
+                })
+        return results
 
     def _resolve_mod_path(self, base_dir: Path, relative_path: object) -> Optional[Path]:
         """Resolve a user-supplied relative path, guarding against traversal."""
@@ -911,6 +999,198 @@ class ModStorageService:
             if target_created:
                 safe_remove_entry(target_dir)
             raise
+
+    def import_category_mod_files(
+        self,
+        category: str,
+        source_paths: object,
+    ) -> list[dict]:
+        """Extract several user-selected archives into a registered category.
+
+        Each archive is imported independently; a failure on one file does not
+        abort the others. Returns a list of per-file results:
+
+        ``{"source": str, "modName": str|None, "path": str|None, "success": bool, "error": str|None}``
+        """
+        results = []
+        for source in source_paths or ():
+            source_path = str(source)
+            try:
+                target_dir, mod_name = self.import_category_mod_file(
+                    category,
+                    source_path,
+                )
+                results.append({
+                    "source": source_path,
+                    "modName": mod_name,
+                    "path": str(target_dir),
+                    "success": True,
+                    "error": None,
+                })
+            except Exception as exc:  # noqa: BLE001
+                results.append({
+                    "source": source_path,
+                    "modName": None,
+                    "path": None,
+                    "success": False,
+                    "error": str(exc),
+                })
+        return results
+
+    @staticmethod
+    def _sanitize_export_filename(name: object) -> str:
+        """Return a Windows-safe base file name from a user-facing display name."""
+        value = str(name or "").strip()
+        if not value:
+            return "mod"
+        # Strip characters that are invalid in Windows filenames.
+        cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", value)
+        cleaned = cleaned.strip().rstrip(" .")
+        if not cleaned:
+            return "mod"
+        # Keep the visible name at a safe length (excluding extension).
+        return cleaned[:200].rstrip(" .") or "mod"
+
+    def _export_folder_contents(
+        self,
+        mod_folder: Path,
+        dest_dir: Path,
+        fmt: str,
+        name: object,
+    ) -> tuple[Path, str]:
+        """Create a .zip/.fantome archive of a mod folder and return (path, name).
+
+        ``fmt`` is ``"zip"`` or ``"fantome"`` (.fantome is a renamed zip).
+        """
+        if not mod_folder.is_dir():
+            raise FileNotFoundError(f"Mod folder not found: {mod_folder}")
+
+        base_name = self._sanitize_export_filename(name)
+        ext = ".fantome" if fmt == "fantome" else ".zip"
+        dest_dir = Path(dest_dir)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        out_path = dest_dir / f"{base_name}{ext}"
+        out_path = out_path.with_name(self._dedupe_export_path(out_path))
+
+        with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_path in sorted(mod_folder.rglob("*")):
+                if file_path.is_dir():
+                    continue
+                arcname = file_path.relative_to(mod_folder).as_posix()
+                zf.write(file_path, arcname)
+        return out_path, out_path.name
+
+    @staticmethod
+    def _dedupe_export_path(path: Path) -> str:
+        """Append (2), (3), ... when the destination file already exists."""
+        candidate = path
+        stem = path.stem
+        suffix = path.suffix
+        counter = 1
+        while candidate.exists():
+            counter += 1
+            candidate = path.with_name(f"{stem} ({counter}){suffix}")
+        return candidate.name
+
+    def export_champion_mod(
+        self,
+        mod_entry: SkinModEntry,
+        dest_dir: object,
+        fmt: str = "fantome",
+    ) -> tuple[Path, str]:
+        """Export one champion skin mod folder into a .zip/.fantome archive.
+
+        Returns ``(destination_path, destination_filename)``.
+        """
+        display_name = mod_entry.display_name or mod_entry.mod_name
+        return self._export_folder_contents(mod_entry.path, dest_dir, fmt, display_name)
+
+    def export_champion_mods(
+        self,
+        mod_entries: object,
+        dest_dir: object,
+        fmt: str = "fantome",
+    ) -> list[dict]:
+        """Export several champion skin mods into ``dest_dir``.
+
+        Each mod is exported to its own archive. Returns per-mod results:
+        ``{"name": str, "filePath": str|None, "success": bool, "error": str|None}``
+        """
+        results = []
+        for entry in mod_entries or ():
+            name = getattr(entry, "mod_name", None) or str(entry)
+            try:
+                out_path, file_name = self.export_champion_mod(entry, dest_dir, fmt)
+                results.append({
+                    "name": name,
+                    "filePath": str(out_path),
+                    "success": True,
+                    "error": None,
+                })
+            except Exception as exc:  # noqa: BLE001
+                results.append({
+                    "name": name,
+                    "filePath": None,
+                    "success": False,
+                    "error": str(exc),
+                })
+        return results
+
+    def export_category_mod(
+        self,
+        category: str,
+        mod_name: str,
+        dest_dir: object,
+        fmt: str = "fantome",
+    ) -> tuple[Path, str]:
+        """Export one category mod folder into a .zip/.fantome archive.
+
+        Returns ``(destination_path, destination_filename)``.
+        """
+        if category not in self.MOD_CATEGORIES:
+            raise ValueError(f"Unsupported mod category: {category}")
+        mod_folder = self.mods_root / category / str(mod_name).strip()
+        display_name = self._load_category_display_names(category).get(
+            str(mod_name).casefold()
+        )
+        return self._export_folder_contents(
+            mod_folder, dest_dir, fmt, display_name or mod_name
+        )
+
+    def export_category_mods(
+        self,
+        category: str,
+        mod_names: object,
+        dest_dir: object,
+        fmt: str = "fantome",
+    ) -> list[dict]:
+        """Export several category mods into ``dest_dir``.
+
+        Each mod is exported to its own archive. Returns per-mod results:
+        ``{"name": str, "filePath": str|None, "success": bool, "error": str|None}``
+        """
+        results = []
+        for mod_name in mod_names or ():
+            name = str(mod_name)
+            try:
+                out_path, file_name = self.export_category_mod(
+                    category, name, dest_dir, fmt
+                )
+                results.append({
+                    "name": name,
+                    "filePath": str(out_path),
+                    "success": True,
+                    "error": None,
+                })
+            except Exception as exc:  # noqa: BLE001
+                results.append({
+                    "name": name,
+                    "filePath": None,
+                    "success": False,
+                    "error": str(exc),
+                })
+        return results
 
     def _list_mods_in_directory(
         self,

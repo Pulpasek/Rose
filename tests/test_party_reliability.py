@@ -312,6 +312,34 @@ class AutomaticLobbyRoomTests(unittest.TestCase):
         room.restore(expected, [101, 202])
         self.assertEqual(room.update("ChampSelect", [], 101), expected)
 
+    def test_restored_room_re_derives_when_in_a_new_lobby(self):
+        # Regression: after restarting Rose in a brand-new lobby, the saved room
+        # from a previous lobby must not pin us forever (Bug #2).
+        room = AutoLobbyRoom()
+        old_room = compute_auto_room_key([101, 202])
+        room.restore(old_room, [101, 202])
+        new_room = room.update("Lobby", [101, 303], 101)
+        self.assertNotEqual(new_room, old_room)
+        self.assertEqual(new_room, compute_auto_room_key([101, 303]))
+
+    def test_three_rose_members_in_one_lobby_all_share_the_room(self):
+        # Regression: party of 3+ Rose users must converge to a single room,
+        # not split off the first two members (Bug #3).
+        expected = compute_auto_room_key([101, 202, 303])
+        room = AutoLobbyRoom()
+        self.assertEqual(room.update("Lobby", [101, 202, 303], 101), expected)
+        # A late-joining third member re-derives to the same 3-person room.
+        self.assertEqual(room.update("Lobby", [101, 202, 303], 101), expected)
+
+    def test_moving_to_new_lobby_joins_the_new_party(self):
+        # Regression: switching from one premade to another must auto-join the
+        # new party instead of staying stuck on the old room (Bug #1).
+        room = AutoLobbyRoom()
+        first = room.update("Lobby", [101, 202], 101)
+        second = room.update("Lobby", [101, 404], 101)
+        self.assertNotEqual(second, first)
+        self.assertEqual(second, compute_auto_room_key([101, 404]))
+
     def test_duplicate_restart_socket_prefers_member_with_skin(self):
         members = PartyRelay._deduplicate_members([
             {"summoner_id": 101, "summoner_name": "Old"},
@@ -423,6 +451,53 @@ class AutomaticPartyManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(manager._active_room_key, shared_room)
         self.assertEqual(manager._active_room_key, manager._personal_room_key)
         self.assertFalse(manager.party_state.auto_room_active)
+        await manager.disable(persist=False)
+
+    async def test_three_clients_in_same_lobby_choose_identical_room(self):
+        # Regression: a 3-person premade of Rose users must all land in the
+        # same room (no split pair + straggler), regardless of discovery order.
+        first = PartyManager(
+            MutableLobbyLCU(101, "First", [101, 202, 303]),
+            DummyState(),
+            storage=self.storage,
+        )
+        second = PartyManager(
+            MutableLobbyLCU(202, "Second", [202, 101, 303]),
+            DummyState(),
+            storage=self.storage,
+        )
+        third = PartyManager(
+            MutableLobbyLCU(303, "Third", [303, 101, 202]),
+            DummyState(),
+            storage=self.storage,
+        )
+        await first.enable()
+        await second.enable()
+        await third.enable()
+        expected = compute_auto_room_key([101, 202, 303])
+        self.assertEqual(first._active_room_key, expected)
+        self.assertEqual(second._active_room_key, expected)
+        self.assertEqual(third._active_room_key, expected)
+        await first.disable(persist=False)
+        await second.disable(persist=False)
+        await third.disable(persist=False)
+
+    async def test_moving_to_new_lobby_replaces_relay(self):
+        # Regression: changing from one premade to another must switch the
+        # active room (and thus the relay) so the new party is auto-joined.
+        state = DummyState()
+        state.phase = "Lobby"
+        lcu = MutableLobbyLCU(101, "Local", [101, 202])
+        manager = PartyManager(lcu, state, storage=self.storage)
+        await manager.enable()
+        old_room = manager._active_room_key
+
+        lcu.lobby_ids = [101, 404]
+        await manager._sync_auto_lobby_room()
+        new_room = manager._active_room_key
+        self.assertNotEqual(new_room, old_room)
+        self.assertEqual(new_room, compute_auto_room_key([101, 404]))
+        self.assertEqual(manager._relay.room_key, new_room)
         await manager.disable(persist=False)
 
 

@@ -878,6 +878,14 @@
       bridge.subscribe("chroma-state", handleChromaStateUpdate);
       bridge.subscribe("phase-change", handlePhaseChange);
       bridge.subscribe("local-asset-url", (data) => handleLocalAssetUrl(data));
+      bridge.subscribe("mod-image-set", (data) => {
+        if (!data || !data.success) return;
+        // A mod thumbnail was changed: bypass the 750ms dedup so the preview
+        // re-fetches fresh thumbnailUrls.
+        lastSkinModsRequestKey = null;
+        lastSkinModsRequestAt = 0;
+        requestModsForCurrentSkin();
+      });
       bridge.subscribe("champion-locked", (data) => {
         championLocked = Boolean(data?.locked);
         if (!championLocked) {
