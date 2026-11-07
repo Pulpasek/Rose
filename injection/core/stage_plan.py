@@ -29,6 +29,7 @@ from utils.core.junction import is_junction, link_or_extract, safe_remove_entry
 from utils.core.logging import get_logger
 from utils.core.paths import get_injection_dir
 
+from ..loadingname.loading_name import MOD_FOLDER as LOADING_NAME_MOD_FOLDER
 from ..loadingname.loading_name import build as build_loading_name
 from ..mods.mod_manager import ModManager
 
@@ -160,6 +161,9 @@ def prepare_plan(injector, plan: StagePlan, target_dir: Path) -> Optional[List[s
             folder = _prepare_party_skin(injector, step, target_dir)
             if folder:
                 names.append(folder)
+    loading_name_dir = target_dir / LOADING_NAME_MOD_FOLDER
+    if loading_name_dir.is_dir() and LOADING_NAME_MOD_FOLDER not in names:
+        names.append(LOADING_NAME_MOD_FOLDER)
     return names or None
 
 

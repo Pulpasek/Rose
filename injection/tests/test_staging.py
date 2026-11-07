@@ -1029,10 +1029,14 @@ class PreparePlanTests(unittest.TestCase):
     def test_friends_skins_are_prepared_in_the_stage_folder(self):
         friend = PartyStep(7, "Friend", 2, 2001, 2003, None, False)
 
-        with patch("party.integration.injection_hook.prepare_peer_skin", return_value="party_7") as prepare:
+        def prepare_peer_skin(*args, **kwargs):
+            (self.target / "ROSE-LoadingName").mkdir()
+            return "party_7"
+
+        with patch("party.integration.injection_hook.prepare_peer_skin", side_effect=prepare_peer_skin) as prepare:
             names = prepare_plan(self.injector, StagePlan(PARTY_SKINS_LABEL, (friend,)), self.target)
 
-        self.assertEqual(names, ["party_7"])
+        self.assertEqual(names, ["party_7", "ROSE-LoadingName"])
         skin_data = prepare.call_args.args[0]
         self.assertEqual((skin_data.summoner_id, skin_data.skin_id, skin_data.chroma_id), (7, 2001, 2003))
         self.assertEqual(prepare.call_args.kwargs["mods_dir"], self.target)

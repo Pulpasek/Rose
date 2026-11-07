@@ -106,6 +106,23 @@ class ClassicInjectionTests(unittest.TestCase):
         self.assertTrue(self.injector.inject_skin('skin_1001', champion_id=1, extra_mods_callback=self.party))
         self.assertEqual(self._injected(), (['1001', 'party_42'], 'regular'))
 
+    def test_party_loading_name_mod_is_not_added_twice(self):
+        with patch.object(
+            self.injector,
+            'prepare_skin_mods',
+            return_value=['1001', 'ROSE-LoadingName'],
+        ):
+            self.assertTrue(self.injector.inject_skin(
+                'skin_1001',
+                champion_id=1,
+                extra_mods_callback=lambda _injector: ['party_42', 'ROSE-LoadingName'],
+            ))
+
+        self.assertEqual(
+            self.run_overlay.call_args.args[0],
+            ['1001', 'ROSE-LoadingName', 'party_42'],
+        )
+
     def test_skin_without_a_classic_version_is_reported(self):
         self.assertFalse(self.injector.inject_skin('skin_60001005', champion_id=60001, classic=True))
         self.run_overlay.assert_not_called()

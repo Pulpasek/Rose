@@ -264,8 +264,13 @@ class SkinInjector:
             try:
                 extra = extra_mods_callback(self)
                 if extra:
-                    mod_names.extend(extra)
-                    log.info(f"[INJECT] Including {len(extra)} party/extra mod(s): {', '.join(extra)}")
+                    added = []
+                    for name in extra:
+                        if name not in mod_names:
+                            mod_names.append(name)
+                            added.append(name)
+                    if added:
+                        log.info(f"[INJECT] Including {len(added)} party/extra mod(s): {', '.join(added)}")
             except Exception as e:
                 log.warning(f"[INJECT] Extra mods callback failed: {e}")
 

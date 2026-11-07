@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import List, Optional
 
 from injection.classic import is_classic_game_mode
+from injection.loadingname.loading_name import (
+    MOD_FOLDER as LOADING_NAME_MOD_FOLDER,
+    build as build_loading_name,
+    parent_skin_id,
+)
 from state import SharedState
 from utils.core.junction import is_junction, link_or_extract, safe_remove_entry
 from utils.core.logging import get_logger
@@ -114,6 +119,10 @@ class PartyInjectionHook:
                 log.warning(
                     f"[PARTY_INJECT] Failed to prepare skin for {skin_data.summoner_name}: {e}"
                 )
+
+        loading_name_dir = Path(injector.mods_dir) / LOADING_NAME_MOD_FOLDER
+        if loading_name_dir.is_dir() and LOADING_NAME_MOD_FOLDER not in mod_folder_names:
+            mod_folder_names.append(LOADING_NAME_MOD_FOLDER)
 
         return mod_folder_names
 
@@ -231,6 +240,13 @@ def prepare_peer_skin(
 
     log.info(
         f"[PARTY_INJECT] Prepared {skin_data.summoner_name}'s skin: {source.name}"
+    )
+    build_loading_name(
+        injector.game_dir,
+        mods_dir,
+        mod_dest,
+        parent_skin_id(source, skin_data.skin_id),
+        other_mods=[mod_dest],
     )
     return mod_folder_name
 

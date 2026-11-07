@@ -498,19 +498,35 @@ def build(game_dir: Path, mods_dir: Path, mod_folder: Path, skin_id: int,
             log.debug("[LOADNAME] the game's language wad is unknown, skipped")
             return None
 
-        table = _read_table(wad)
-        if table and table[:3] == b"RST" and table[3] == 5:
+        game_table = _read_table(wad)
+        if game_table and game_table[:3] == b"RST" and game_table[3] == 5:
             for alias in aliases:
-                name = _text_of(table, _key_hash(f"game_character_skin_displayname_{alias}_{skin_id % 1000}"))
+                name = _text_of(
+                    game_table,
+                    _key_hash(f"game_character_skin_displayname_{alias}_{skin_id % 1000}"),
+                )
                 if not name:
                     continue
                 champion_key = _key_hash(f"{RECORD_KEY}{alias}")
-                champion_name = _text_of(table, champion_key)
+                champion_name = _text_of(game_table, champion_key)
                 if champion_name is None:
                     continue
                 target = Path(mods_dir) / MOD_FOLDER
                 (target / "META").mkdir(parents=True, exist_ok=True)
-                texts = {f"{RECORD_KEY}{alias}": name}
+                texts = {}
+
+                info_path = target / "META" / "info.json"
+                if overrides and info_path.is_file():
+                    existing_info = json.loads(info_path.read_text(encoding="utf-8"))
+                    existing_texts = (
+                        existing_info.get("Layers", {})
+                        .get("base", {})
+                        .get("StringOverrides", {})
+                        .get("en_us", {})
+                    )
+                    if isinstance(existing_texts, dict):
+                        texts.update(existing_texts)
+                texts[f"{RECORD_KEY}{alias}"] = name
 
                 # the chat and the name over the head keep the champion's name (see the module's note), in its forms
                 # too (FORM_RECORDS)
@@ -538,14 +554,26 @@ def build(game_dir: Path, mods_dir: Path, mod_folder: Path, skin_id: int,
                 if overrides:
                     # LTK Manager applies them to the en_US table, the one an en_US client reads
                     info["Layers"] = {
-                        "base": {"Name": "base", "Priority": 0, "StringOverrides": {"en_us": texts}},
+                        "base": {
+                            "Name": "base",
+                            "Priority": 0,
+                            "StringOverrides": {"en_us": texts},
+                        },
                     }
                 else:
+                    table = game_table
+                    table_path = target / TABLE_PATH
+                    if table_path.is_file():
+                        existing_table = table_path.read_bytes()
+                        if existing_table[:3] == b"RST" and existing_table[3] == 5:
+                            table = existing_table
+                        else:
+                            log.warning("[LOADNAME] existing loading-name table is invalid; rebuilding it")
                     for key, text in texts.items():
                         table = _with_text(table, _key_hash(key), text)
-                    (target / TABLE_PATH.parent).mkdir(parents=True, exist_ok=True)
-                    (target / TABLE_PATH).write_bytes(table)
-                (target / "META" / "info.json").write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
+                    table_path.parent.mkdir(parents=True, exist_ok=True)
+                    table_path.write_bytes(table)
+                info_path.write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
                 log.info(f"[LOADNAME] the loading screen will show '{name}'"
                          + (" (string overrides)" if overrides else ""))
                 return MOD_FOLDER

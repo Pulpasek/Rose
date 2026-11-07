@@ -600,7 +600,11 @@ class InjectionHookTests(unittest.TestCase):
     def injector(self):
         def resolve_zip(zip_arg, chroma_id=None, **_):
             return None if chroma_id else self.skin_zip
-        return SimpleNamespace(mods_dir=self.mods_dir, _resolve_zip=Mock(side_effect=resolve_zip))
+        return SimpleNamespace(
+            game_dir=self.root,
+            mods_dir=self.mods_dir,
+            _resolve_zip=Mock(side_effect=resolve_zip),
+        )
 
     def test_skin_is_linked_under_a_party_folder(self):
         hook = PartyInjectionHook(Mock(), make_state())
@@ -611,6 +615,41 @@ class InjectionHookTests(unittest.TestCase):
         self.assertEqual(name, "party_2")
         # Missing chroma: the base skin is used
         self.assertEqual((self.mods_dir / name / "WAD" / "MasterYi.wad.client").read_bytes(), b"skin")
+
+    def test_peer_skin_builds_its_loading_name_mod(self):
+        hook = PartyInjectionHook(Mock(), make_state())
+        skin = PartySkinData(summoner_id=2, summoner_name="B", champion_id=11, skin_id=11002)
+        injector = self.injector()
+
+        with patch("party.integration.injection_hook.build_loading_name") as build:
+            name = hook._prepare_single_skin(skin, injector)
+
+        self.assertEqual(name, "party_2")
+        build.assert_called_once_with(
+            self.root,
+            self.mods_dir,
+            self.mods_dir / "party_2",
+            11002,
+            other_mods=[self.mods_dir / "party_2"],
+        )
+
+    def test_party_loading_name_mod_is_added_once(self):
+        skin = PartySkinData(summoner_id=2, summoner_name="B", champion_id=11, skin_id=11002)
+        party_manager = SimpleNamespace(
+            enabled=True,
+            party_state=SimpleNamespace(peers={2: object()}),
+            get_party_skins=lambda: [skin],
+        )
+        hook = PartyInjectionHook(party_manager, make_state())
+
+        def prepare(*args, **kwargs):
+            (self.mods_dir / "ROSE-LoadingName").mkdir()
+            return "party_2"
+
+        with patch.object(hook, "_prepare_single_skin", side_effect=prepare):
+            names = hook.prepare_party_mods(self.injector())
+
+        self.assertEqual(names, ["party_2", "ROSE-LoadingName"])
 
     def test_custom_mod_folder_is_used(self):
         mod = self.root / "mods" / "skins" / "11000" / "Custom Yi"
